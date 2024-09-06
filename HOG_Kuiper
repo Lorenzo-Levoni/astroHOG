@@ -1,0 +1,57 @@
+# #!/usr/bin/env python
+#
+# This file is part of astroHOG
+#
+# CONTACT: juandiegosolerp[at]gmail.com
+# Copyright (C) 2017-2023 Juan Diego Soler
+
+"""
+astroHOG Statistical tests
+"""
+
+import numpy as np
+from scipy.stats import circmean, circstd
+import pycircstat
+
+# -------------------------------------------------------------------------------------------------------
+def HOG_Kuiper(phi, weights=None, s_phi=None, nruns=1):
+   # Calculates Kuiper statistic of the distributions of angles phi.
+   #
+   # INPUTS
+   # phi      - angles between -pi/2 and pi/2
+   # weights  - statistical weights
+   #
+   # OUTPUTS
+   # V       - value of the Kuiper statistic   
+   # p_value     - 
+  
+
+   if np.logical_or(s_phi is None, nruns<2):
+
+      output=Kuiper_test(phi, weights=weights)
+      return {'V': output['V'], 'p_value': output['p_value'], 
+             }
+
+   else: 
+
+      arrngood=np.zeros(nruns)
+      arrV=np.zeros(nruns)
+      arrp_value=np.zeros(nruns)
+      
+    for i in range(0,nruns):
+
+         inmaprand=np.random.normal(loc=phi, scale=s_phi)  
+         output=Kuiper_test(inmaprand, weights=weights)
+         arrngood[i]=output['ngood']
+         arrV[i]=output['V']
+         arrs_Z[i]=output['s_Z']
+         
+    
+      ngood=np.nanmean(arrngood)
+      V     =np.nanmean(arrV)
+      p_value   =np.nanmean(arrp_value) 
+     
+     return {'V': V, 'p_value': p_value} 
+
+
+
