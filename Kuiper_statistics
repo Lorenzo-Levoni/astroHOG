@@ -1,0 +1,40 @@
+import numpy as np
+from scipy.stats import kstwobign
+
+def kuiper_test(data):
+    """
+    Perform Kuiper's test for uniformity on circular data.
+    
+    Parameters:
+    data (array-like): The circular data points in radians (0 to 2*pi).
+    
+    Returns:
+    V (float): The Kuiper statistic.
+    p_value (float): The p-value associated with the test.
+    """
+    # Ensure data is a numpy array and sort it
+    data = np.sort(np.asarray(data))
+    
+    # Number of data points
+    n = len(data)
+    
+    # Compute the empirical CDF
+    cdf = np.arange(1, n + 1) / n
+    
+    # Convert data to uniform spacing on the circle
+    data_uniform = data / (2 * np.pi)
+    
+    # Compute D+ and D-
+    D_plus = np.max(cdf - data_uniform)
+    D_minus = np.max(data_uniform - (cdf - 1/n))
+    
+    # Kuiper's statistic
+    V = D_plus + D_minus
+    
+    # Approximate p-value using the asymptotic formula
+    lambda_val = (np.sqrt(n) + 0.155 + 0.24/np.sqrt(n)) * V
+    p_value = 2 * (kstwobign.sf(lambda_val))
+    
+    return V, p_value
+
+  
