@@ -1,0 +1,80 @@
+import numpy as np
+from scipy.stats import circmean, circstd
+
+def HOG_HodgesAjne(phi, weights=None, s_phi=None, nruns=1):
+    # Calcola la statistica di Hodges-Ajne per la distribuzione di angoli phi
+    #
+    # INPUTS
+    # phi      - angoli tra -pi e pi
+    # weights  - pesi statistici (non necessari per Hodges-Ajne, ma gestiti)
+    # s_phi    - deviazione standard degli angoli (per simulazioni Monte Carlo)
+    # nruns    - numero di run per le simulazioni Monte Carlo
+    #
+    # OUTPUTS
+    # H        - valore della statistica di Hodges-Ajne
+    # s_H      - errore standard della statistica H (se calcolata con MC)
+    # meanphi  - media circolare degli angoli
+
+    if np.logical_or(s_phi is None, nruns < 2):
+        output = HOG_HodgesAjnelite(phi, weights=weights)
+        return {
+            'H': output['H'], 's_H': np.nan, 'meanphi': output['meanphi'], 
+            's_meanphi': np.nan, 'ngood': output['ngood']
+        }
+
+    else:
+        arrngood = np.zeros(nruns)
+        arrH = np.zeros(nruns)
+        arrmeanphi = np.zeros(nruns)
+
+        for i in range(nruns):
+            inmaprand = np.random.normal(loc=phi, scale=s_phi)
+            output = HOG_HodgesAjnelite(inmaprand, weights=weights)
+            arrngood[i] = output['ngood']
+            arrH[i] = output['H']
+            arrmeanphi[i] = output['meanphi']
+
+        ngood = np.nanmean(arrngood)
+        H = np.nanmean(arrH)
+        s_H = np.nanstd(arrH)
+        meanphi = circmean(arrmeanphi, low=-np.pi, high=np.pi)
+        s_meanphi = circstd(arrmeanphi, low=-np.pi, high=np.pi)
+
+        return {
+            'H': H, 's_H': s_H, 'meanphi': meanphi, 's_meanphi': s_meanphi, 'ngood': ngood
+        }
+
+def HOG_HodgesAjnelite(angles, weights=None):
+    # Calcola la statistica di Hodges-Ajne per la distribuzione di angoli
+    #
+    # INPUTS
+    # angles   - angoli tra -pi e pi
+    # weights  - pesi statistici (non necessari per Hodges-Ajne, ma gestiti)
+    #
+    # OUTPUTS
+    # H        - valore della statistica di Hodges-Ajne
+    # meanPhi  - media circolare degli angoli
+
+    if weights is None:
+        weights = np.ones_like(angles)
+
+    angles = np.mod(angles, 2 * np.pi)  # porta gli angoli tra 0 e 2*pi
+
+    n = len(angles)
+    half_circle_count = np.zeros(n)
+    
+    # Conta il numero di punti in ogni semicerchio centrato su ciascun punto
+    for i in range(n):
+        diff_angles = np.mod(angles - angles[i] + np.pi, 2 * np.pi) - np.pi
+        half_circle_count[i] = np.sum(np.abs(diff_angles) <= np.pi / 2)
+
+    # Statistica di Hodges-Ajne
+    H = 2 * np.min(half_circle_count)
+
+    # Media circolare
+    meanphi = circmean(angles, low=0, high=2 * np.pi)
+
+    ngood = float(np.size(angles))
+
+    return {'H': H, 'meanphi': meanphi, 'ngood': ngood}
+
