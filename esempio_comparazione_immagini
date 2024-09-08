@@ -50,9 +50,9 @@ circstats, corrframe, smoothframe1, smoothframe2 = HOGcorr_ima(
 )
 
 # Step 6: Print the correlation statistics obtained by astroHOG
-print('Mean resultant vector (r)        ', circstats['RVL'], '+/-', circstats['s_RVL'])
-print('Kuiper statistic (K)             ', circstats['K'], '+/-', circstats['s_K'])
-print('Number of gradient pairs         ', circstats['ngood'])
+print('Mean angle (phi)        ', circstats['meanphi'], '+/-', circstats['s_meanphi'])
+print('Kuiper statistic (K)             ', circstats['Kuiper'], '+/-', circstats['s_Kuiper'])
+#print('Number of gradient pairs         ', circstats['ngood'])
 
 # Step 7: Compute gradients
 dI1dx = ndimage.gaussian_filter(smoothframe1, [ksz, ksz], order=[0, 1], mode='nearest')
