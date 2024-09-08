@@ -1,0 +1,224 @@
+import sys
+import numpy as np
+from astropy.convolution import convolve_fft
+from astropy.convolution import Gaussian2DKernel
+from congrid import *
+from scipy import ndimage
+from scipy import stats
+import matplotlib.pyplot as plt
+from nose.tools import assert_equal, assert_true
+from tqdm import tqdm
+
+# --------------------------------------------------------------------------------------------------------------
+def vprint(obj, verbose=True):
+    if verbose:
+        print(obj)
+    return
+
+# ---------------------------------------------------------------------------------------------------------------
+def mse(x, y):
+    return np.linalg.norm(x - y)
+
+# ---------------------------------------------------------------------------------------------------------------
+def imablockaverage(corrframe, nbx=7, nby=7, weight=1.):
+
+    sz=np.shape(corrframe)
+    limsx=np.linspace(0,sz[0]-1,nbx+1,dtype=int)
+    limsy=np.linspace(0,sz[1]-1,nby+1,dtype=int)
+
+    maxvblocks=np.zeros([nbx,nby])
+    sigvblocks=np.zeros([nbx,nby])
+    vblocks=np.zeros([nbx,nby])
+
+    for i in range(0, np.size(limsx)-1):
+        for k in range(0, np.size(limsy)-1):
+            phi=corrframe[limsx[i]:limsx[i+1],limsy[k]:limsy[k+1]]
+            tempphi=phi.ravel()
+            wghts=0.*tempphi[np.isfinite(tempphi).nonzero()]+weight
+            output=HOG_Kuiper(2.*tempphi[np.isfinite(tempphi).nonzero()], weights=wghts)
+            vblocks[i,k]=output['Kuiper']
+
+    imaxb, jmaxb = (vblocks==np.max(vblocks)).nonzero()
+
+    return vblocks
+
+# ---------------------------------------------------------------------------------------------------------------
+def HOGcorr_ima(ima1, ima2, s_ima1=None, s_ima2=None, pxsz=1., ksz=1., res=1., nruns=0, mask1=None, mask2=None, gradthres1=None, gradthres2=None, weights=None, verbose=True):
+    """ 
+    Calcola la correlazione spaziale tra ima1 e ima2 usando il metodo HOG e il test di Kuiper.
+
+    Parameters
+    ----------   
+    ima1 : array della prima immagine da confrontare 
+    ima2 : array della seconda immagine da confrontare
+    s_ima1 : deviazione standard per ima1
+    s_ima2 : deviazione standard per ima2
+    pxsz : dimensione del pixel
+    ksz : dimensione del kernel derivativo in unità di pixel
+
+    Returns
+    -------
+    hogcorr :  
+    corrframe :
+    """
+
+    sz1=np.shape(ima1)
+    sz2=np.shape(ima2)
+
+    if (nruns==0):
+        nruns=1
+
+    if (s_ima1 is None):
+        if (nruns > 0):
+            vprint('Warning: ima1 standard deviation not provided', verbose=verbose)
+        mruns1=1
+    else:
+        if np.isscalar(s_ima1):
+            vprint('Warning: common standard deviation provided for the whole map', verbose=verbose)
+            s_ima1=np.copy(s_ima1)*np.ones_like(ima1)
+        assert s_ima1.shape==ima1.shape, "Dimensions of s_ima1 and ima2 must match"
+        mruns1=nruns
+
+    if (s_ima2 is None):
+        if (nruns > 0):
+            vprint('Warning: ima2 standard deviation not provided', verbose=verbose)
+        mruns2=1
+    else:
+        if np.isscalar(s_ima2):
+            vprint('Warning: common standard deviation provided for the whole map', verbose=verbose)
+            s_ima2=np.copy(s_ima2)*np.ones_like(ima2)
+        assert s_ima2.shape==ima2.shape, "Dimensions of s_ima2 and ima2 must match"
+        mruns2=nruns
+
+    # -----------------------------------------------
+    ngoodvec=np.zeros(mruns1*mruns2)
+
+    # Output circolare per il test di Kuiper
+    kuipervals = np.zeros(mruns1*mruns2)
+
+    # Outputs ---------------------------------------------------------------------
+    meankuiper = np.nan; s_kuiper = np.nan
+
+    if (np.logical_or(mruns1 > 0, mruns2 > 0)):
+        vprint("Running astroHOG Montecarlo ========================================", verbose=verbose)
+        if (verbose):
+            pbar = tqdm(total=mruns1*mruns2)
+
+        for i in range(0,mruns1):
+            if (mruns1 > 1):
+                rand1=np.random.normal(loc=ima1, scale=s_ima1)
+            else:
+                rand1=ima1.copy()
+
+            for k in range(0,mruns2):
+                if (mruns2 > 1):
+                    rand2=np.random.normal(loc=ima2, scale=s_ima2)
+                else:
+                    rand2=ima2.copy()
+
+                circstats, corrframe, sima1, sima2 = HOGcorr_imaLITE(rand1, rand2, pxsz=pxsz, ksz=ksz, res=res, gradthres1=gradthres1, gradthres2=gradthres2, mask1=mask1, mask2=mask2, weights=weights)
+                ind=np.ravel_multi_index((i, k),  dims=(mruns1,mruns2))
+
+                ngoodvec[ind]=circstats['ngood']
+
+                kuipervals[ind] = circstats['Kuiper']
+
+                if (verbose):
+                    pbar.update()
+        
+        if (verbose):
+            pbar.close()  
+
+        meankuiper = np.mean(kuipervals); s_kuiper = np.std(kuipervals)
+
+    else:
+        
+        vprint('Montecarlo iterations disabled =============================', verbose=verbose)
+        vprint('Warning: uncertainties on the correlation parameters will not be provided', verbose=verbose)
+        circstats, corrframe, sima1, sima2 = HOGcorr_imaLITE(ima1, ima2, pxsz=pxsz, ksz=ksz, res=res, gradthres1=gradthres1, gradthres2=gradthres2, mask1=mask1, mask2=mask2, weights=weights)
+
+        meankuiper = circstats['Kuiper']; s_kuiper = np.nan
+
+    circstats={'Kuiper': meankuiper, 's_Kuiper': s_kuiper, 'ngood': np.mean(ngoodvec)}
+
+    return circstats, corrframe, sima1, sima2
+
+# ---------------------------------------------------------------------------------------------------------------
+def HOGcorr_imaLITE(ima1, ima2, pxsz=1., ksz=1., res=1., mode='nearest', mask1=None, mask2=None, gradthres1=None, gradthres2=None, weights=None, computejk=False, verbose=True):
+    """ 
+    Calcola la correlazione spaziale tra ima1 e ima2 usando il metodo HOG e il test di Kuiper.
+
+    Parameters
+    ----------   
+    ima1 : array della prima immagine da confrontare 
+    ima2 : array della seconda immagine da confrontare
+    pxsz : dimensione del pixel
+    ksz : dimensione del kernel derivativo in unità di pixel
+    mode : specifica come l'array di input viene esteso quando il kernel si sovrappone ai bordi.
+    
+    Returns
+    -------
+    circstats:  Statistiche che descrivono la correlazione tra le immagini di input
+    corrframe : array contenente gli angoli tra i gradienti delle immagini
+    sima1     : ima1 smussato con un filtro gaussiano 2D
+    sima2     : ima2 smussato con un filtro gaussiano 2D
+    """
+
+    # Check if the images match
+    assert ima2.shape == ima1.shape, "Dimensions of ima2 and ima1 must match"
+    sz1=np.shape(ima1)
+
+    # Assegna pesi se non sono specificati
+    if weights is None:
+        weights=np.ones(sz1)
+
+    # Controlla se le maschere corrispondono
+    if mask1 is None:
+        mask1=np.ones_like(ima1)
+    if mask2 is None:
+        mask2=np.ones_like(ima2)
+
+    pxksz=(ksz/(2*np.sqrt(2.*np.log(2.))))/pxsz
+
+    # Calcolo dei gradienti
+    sima1=ndimage.filters.gaussian_filter(ima1, [pxksz, pxksz], order=[0,0], mode=mode)
+    sima2=ndimage.filters.gaussian_filter(ima2, [pxksz, pxksz], order=[0,0], mode=mode)
+
+    grad1=np.gradient(sima1)
+    grad2=np.gradient(sima2)
+
+    # Componenti del gradiente
+    gradmod1=np.sqrt(grad1[0]**2.+grad1[1]**2.)
+    gradmod2=np.sqrt(grad2[0]**2.+grad2[1]**2.)
+
+    grad1normx=np.copy(grad1[1])
+    grad1normy=np.copy(grad1[0])
+
+    grad2normx=np.copy(grad2[1])
+    grad2normy=np.copy(grad2[0])
+
+    grad1normx[np.isfinite(gradmod1).nonzero()]=grad1[1][np.isfinite(gradmod1).nonzero()]/gradmod1[np.isfinite(gradmod1).nonzero()]
+    grad1normy[np.isfinite(gradmod1).nonzero()]=grad1[0][np.isfinite(gradmod1).nonzero()]/gradmod1[np.isfinite(gradmod1).nonzero()]
+
+    grad2normx[np.isfinite(gradmod2).nonzero()]=grad2[1][np.isfinite(gradmod2).nonzero()]/gradmod2[np.isfinite(gradmod2).nonzero()]
+    grad2normy[np.isfinite(gradmod2).nonzero()]=grad2[0][np.isfinite(gradmod2).nonzero()]/gradmod2[np.isfinite(gradmod2).nonzero()]
+
+    # -----------------------------------------------
+    # Relazione tra i gradienti delle immagini
+    corrframe = np.arctan2(grad2normx*grad1normy-grad2normy*grad1normx,grad2normx*grad1normx+grad2normy*grad1normy)
+
+    if (gradthres1 is None):
+        gradthres1=np.percentile(gradmod1[np.isfinite(gradmod1).nonzero()], q=15)
+    if (gradthres2 is None):
+        gradthres2=np.percentile(gradmod2[np.isfinite(gradmod2).nonzero()], q=15)
+
+    corrframe[np.where(np.logical_or(np.logical_or(gradmod1 <= gradthres1, gradmod2 <= gradthres2), np.logical_or(mask1 == 0, mask2 == 0)))] = np.nan
+
+    # Test di Kuiper sulla distribuzione degli angoli
+    kuiper_test_res = HOG_Kuiper(corrframe[np.isfinite(corrframe).nonzero()])
+
+    circstats={'Kuiper': kuiper_test_res['Kuiper'], 'ngood': len(corrframe[np.isfinite(corrframe).nonzero()])}
+
+    return circstats, corrframe, sima1, sima2
+
+
