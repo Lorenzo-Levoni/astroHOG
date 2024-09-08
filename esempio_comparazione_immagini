@@ -4,6 +4,7 @@ import matplotlib.pyplot as plt
 from astropy.io import fits
 from scipy import ndimage
 from astrohog2d import HOGcorr_ima
+import imageio.v2 as imageo
 
 # Step 1: Load the images
 #hdul = fits.open('../data/testimage1.fits')
@@ -13,8 +14,8 @@ from astrohog2d import HOGcorr_ima
 #image2 = hdul[0].data
 #hdul.close()
 
-image1 = imageio.imread('C:/Users/lollo/OneDrive/Desktop/image.001.png', mode='F')
-image2 = imageio.imread('C:/Users/lollo/OneDrive/Desktop/image.002.png', mode='F')
+image1 = imageio.v2.imread('C:/Users/lollo/OneDrive/Desktop/image.001.png', mode='F')
+image2 = imageio.v2.imread('C:/Users/lollo/OneDrive/Desktop/image.002.png', mode='F')
 
 # Step 2: Display images
 fig, ax = plt.subplots(1, 2, figsize=(16., 12.))
