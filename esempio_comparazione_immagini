@@ -1,440 +1,93 @@
-{
- "cells": [
-  {
-   "cell_type": "code",
-   "execution_count": 1,
-   "metadata": {},
-   "outputs": [],
-   "source": [
-    "# This is an example of the comparison of images using the HOG technique\n",
-    "#\n",
-    "# Prepared by Juan D. Soler (soler@mpia.de)\n",
-    "\n",
-    "import sys\n",
-    "sys.path.append('../')\n",
-    "from astrohog2d import *\n",
-    "from statests import *\n",
-    "\n",
-    "import matplotlib.image as mpimg\n",
-    "import matplotlib.pyplot as plt\n",
-    "from astropy.io import fits\n",
-    "\n",
-    "from scipy import ndimage"
-   ]
-  },
-  {
-   "cell_type": "code",
-   "execution_count": 2,
-   "metadata": {},
-   "outputs": [],
-   "source": [
-    "# Load the images that you want to compare\n",
-    "# astroHOG assumes that the cubes are spatially aligned and are reprojected into the same grid\n",
-    "\n",
-    "hdul = fits.open('../data/testimage1.fits')\n",
-    "image1=hdul[0].data\n",
-    "hdul.close()\n",
-    "hdul = fits.open('../data/testimage2.fits')\n",
-    "image2=hdul[0].data\n",
-    "hdul.close()\n",
-    "\n",
-    "# In case the images are in png format\n",
-    "#image1 = scipy.ndimage.imread('../data/image.001.png', flatten=True)\n",
-    "#image2 = scipy.ndimage.imread('../data/image.002.png', flatten=True)"
-   ]
-  },
-  {
-   "cell_type": "code",
-   "execution_count": 3,
-   "metadata": {},
-   "outputs": [
-    {
-     "data": {
-      "image/png": ""
-      "text/plain": [
-       "<Figure size 1152x864 with 2 Axes>"
-      ]
-     },
-     "metadata": {
-      "needs_background": "light"
-     },
-     "output_type": "display_data"
-    }
-   ],
-   "source": [
-    "fig, ax = plt.subplots(1,2, figsize=(16., 12.))\n",
-    "ax[0].imshow(image1, origin='lower', interpolation='none', cmap='Greys_r')\n",
-    "ax[0].set_title('Image 1')\n",
-    "ax[1].imshow(image2, origin='lower', interpolation='none', cmap='Greys_r')\n",
-    "ax[1].set_title('Image 2')\n",
-    "plt.show()"
-   ]
-  },
-  {
-   "cell_type": "code",
-   "execution_count": 4,
-   "metadata": {},
-   "outputs": [],
-   "source": [
-    "# Here you select the size of your derivative kernel in pixels\n",
-    "ksz=9"
-   ]
-  },
-  {
-   "cell_type": "code",
-   "execution_count": 6,
-   "metadata": {},
-   "outputs": [],
-   "source": [
-    "# Here I define the masks for both images\n",
-    "# For the sake of simplicity, I'm only masking the edges\n",
-    "sz1=np.shape(image1)\n",
-    "mask1=1.+0.*image1\n",
-    "mask1[0:ksz,:]=0.\n",
-    "mask1[sz1[0]-1-ksz:sz1[0],:]=0.\n",
-    "mask1[:,0:ksz]=0.\n",
-    "mask1[:,sz1[1]-1-ksz:sz1[1]]=0.\n",
-    "sz2=np.shape(image2)\n",
-    "mask2=1.+0.*image2\n",
-    "mask2[0:ksz,:]=0.\n",
-    "mask2[sz2[0]-1-ksz:sz2[0],:]=0.\n",
-    "mask2[:,0:ksz]=0.\n",
-    "mask2[:,sz2[1]-1-ksz:sz2[1]]=0."
-   ]
-  },
-  {
-   "cell_type": "code",
-   "execution_count": 8,
-   "metadata": {},
-   "outputs": [],
-   "source": [
-    "# Calculate the relative orientation angles using the tools in the astroHOG package\n",
-    "circstats, corrframe, simage1, simage2 = HOGcorr_imaLITE(image1, image2, ksz=ksz, mask1=mask1, mask2=mask2)"
-   ]
-  },
-  {
-   "cell_type": "code",
-   "execution_count": 9,
-   "metadata": {},
-   "outputs": [
-    {
-     "name": "stdout",
-     "output_type": "stream",
-     "text": [
-      "Mean resultant vector (r)         0.23650952432133207\n",
-      "Rayleigh statistic (Z)            290.1934276091106\n",
-      "Projected Rayleigh statistic (V)  289.8030382485904\n",
-      "Pearson correlation coefficient   0.40454575\n",
-      "Cross correlation                 0.9019265\n",
-      "Number of gradient pairs          752745.0\n"
-     ]
-    }
-   ],
-   "source": [
-    "# Print the correlation statistics obtained by astrohog\n",
-    "print('Mean resultant vector (r)        ', circstats['RVL'])\n",
-    "print('Rayleigh statistic (Z)           ', circstats['Z'])\n",
-    "print('Projected Rayleigh statistic (V) ', circstats['V'])\n",
-    "print('Pearson correlation coefficient  ', circstats['pearsonr'])\n",
-    "print('Cross correlation                ', circstats['crosscor'])\n",
-    "print('Number of gradient pairs         ', circstats['ngood'])"
-   ]
-  },
-  {
-   "cell_type": "code",
-   "execution_count": 10,
-   "metadata": {},
-   "outputs": [
-    {
-     "name": "stderr",
-     "output_type": "stream",
-     "text": [
-      "\r",
-      "  0%|          | 0/9 [00:00<?, ?it/s]"
-     ]
-    },
-    {
-     "name": "stdout",
-     "output_type": "stream",
-     "text": [
-      "Warning: common standard deviation provided for the whole map\n",
-      "Warning: common standard deviation provided for the whole map\n",
-      "Running astroHOG Montecarlo ========================================\n"
-     ]
-    },
-    {
-     "name": "stderr",
-     "output_type": "stream",
-     "text": [
-      "100%|██████████| 9/9 [00:04<00:00,  1.97it/s]\n"
-     ]
-    }
-   ],
-   "source": [
-    "# Calculate the relative orientation angles and uncertainties using standard deviation values\n",
-    "circstats, corrframe, smoothframe1, smoothframe2 = HOGcorr_ima(image1, image2, ksz=ksz, mask1=mask1, mask2=mask2, s_ima1=0.1*np.nanmin(image1), s_ima2=0.1*np.nanmin(image2), nruns=3)"
-   ]
-  },
-  {
-   "cell_type": "code",
-   "execution_count": 11,
-   "metadata": {},
-   "outputs": [
-    {
-     "name": "stdout",
-     "output_type": "stream",
-     "text": [
-      "Mean resultant vector (r)         0.2365060895664307 +/- 3.73965854549131e-05\n",
-      "Rayleigh statistic (Z)            290.1892132194335 +/- 0.0458850160270567\n",
-      "Projected Rayleigh statistic (V)  289.80079273963327 +/- 0.04747304020041794\n",
-      "Number of gradient pairs          752745.0\n"
-     ]
-    }
-   ],
-   "source": [
-    "# Print the correlation statistics obtained by astrohog\n",
-    "print('Mean resultant vector (r)        ', circstats['RVL'], '+/-', circstats['s_RVL'])\n",
-    "print('Rayleigh statistic (Z)           ', circstats['Z'], '+/-', circstats['s_Z'])\n",
-    "print('Projected Rayleigh statistic (V) ', circstats['V'], '+/-', circstats['s_V'])\n",
-    "print('Number of gradient pairs         ', circstats['ngood'])"
-   ]
-  },
-  {
-   "cell_type": "code",
-   "execution_count": 13,
-   "metadata": {},
-   "outputs": [
-    {
-     "name": "stderr",
-     "output_type": "stream",
-     "text": [
-      "\r",
-      "  0%|          | 0/9 [00:00<?, ?it/s]"
-     ]
-    },
-    {
-     "name": "stdout",
-     "output_type": "stream",
-     "text": [
-      "Running astroHOG Montecarlo ========================================\n"
-     ]
-    },
-    {
-     "name": "stderr",
-     "output_type": "stream",
-     "text": [
-      "100%|██████████| 9/9 [00:04<00:00,  1.98it/s]\n"
-     ]
-    }
-   ],
-   "source": [
-    "# Calculate the relative orientation angles and uncertainties using standard deviation maps\n",
-    "circstats, corrframe, simage1, simage2 = HOGcorr_ima(image1, image2, ksz=ksz, mask1=mask1, mask2=mask2, s_ima1=0.1*image1, s_ima2=0.1*image2, nruns=3)"
-   ]
-  },
-  {
-   "cell_type": "code",
-   "execution_count": 14,
-   "metadata": {},
-   "outputs": [
-    {
-     "name": "stdout",
-     "output_type": "stream",
-     "text": [
-      "Mean resultant vector (r)         0.21250958087984284 +/- 0.0017563327874516122\n",
-      "Rayleigh statistic (Z)            260.74587842606746 +/- 2.154992417643097\n",
-      "Projected Rayleigh statistic (V)  260.72276599153116 +/- 2.1556751614531984\n",
-      "Number of gradient pairs          752745.0\n"
-     ]
-    }
-   ],
-   "source": [
-    "# Print the correlation statistics obtained by astrohog\n",
-    "print('Mean resultant vector (r)        ', circstats['RVL'], '+/-', circstats['s_RVL'])\n",
-    "print('Rayleigh statistic (Z)           ', circstats['Z'], '+/-', circstats['s_Z'])\n",
-    "print('Projected Rayleigh statistic (V) ', circstats['V'], '+/-', circstats['s_V'])\n",
-    "print('Number of gradient pairs         ', circstats['ngood'])"
-   ]
-  },
-  {
-   "cell_type": "code",
-   "execution_count": 15,
-   "metadata": {},
-   "outputs": [],
-   "source": [
-    "# For the sake of illustration, here we calculate the gradients that underlie astroHOG\n",
-    "dI1dx=ndimage.filters.gaussian_filter(smoothframe1, [ksz, ksz], order=[0,1], mode='nearest')\n",
-    "dI1dy=ndimage.filters.gaussian_filter(smoothframe1, [ksz, ksz], order=[1,0], mode='nearest')\n",
-    "normgrad1=np.sqrt(dI1dx**2+dI1dy**2)\n",
-    "udI1dx=dI1dx/normgrad1\n",
-    "udI1dy=dI1dy/normgrad1\n",
-    "psi1=np.arctan2(dI1dy,dI1dx)\n",
-    "\n",
-    "dI2dx=ndimage.filters.gaussian_filter(smoothframe2, [ksz, ksz], order=[0,1], mode='nearest')\n",
-    "dI2dy=ndimage.filters.gaussian_filter(smoothframe2, [ksz, ksz], order=[1,0], mode='nearest')\n",
-    "normgrad2=np.sqrt(dI2dx**2+dI2dy**2)\n",
-    "udI2dx=dI2dx/normgrad2\n",
-    "udI2dy=dI2dy/normgrad2\n",
-    "psi2=np.arctan2(dI2dy,dI2dx)"
-   ]
-  },
-  {
-   "cell_type": "code",
-   "execution_count": 19,
-   "metadata": {},
-   "outputs": [],
-   "source": [
-    "# This is just setting up the vector representation\n",
-    "pitch=50\n",
-    "sz=np.shape(image1)\n",
-    "X, Y = np.meshgrid(np.arange(0, sz[1]-1, pitch), np.arange(0, sz[0]-1, pitch))\n",
-    "ux1=dI1dx[Y,X]\n",
-    "uy1=dI1dy[Y,X]\n",
-    "ux2=dI2dx[Y,X]\n",
-    "uy2=dI2dy[Y,X]\n",
-    "ux1=np.cos(psi1[Y,X])\n",
-    "uy1=np.sin(psi1[Y,X])\n",
-    "ux2=np.cos(psi2[Y,X])\n",
-    "uy2=np.sin(psi2[Y,X])"
-   ]
-  },
-  {
-   "cell_type": "code",
-   "execution_count": 20,
-   "metadata": {},
-   "outputs": [
-    {
-     "data": {
-      "image/png": ""
-      "text/plain": [
-       "<Figure size 1296x864 with 2 Axes>"
-      ]
-     },
-     "metadata": {
-      "needs_background": "light"
-     },
-     "output_type": "display_data"
-    }
-   ],
-   "source": [
-    "fig, ax = plt.subplots(1,2, figsize=(18., 12.))\n",
-    "ax[0].imshow(normgrad1, origin='lower', interpolation='none', cmap='Greys_r')\n",
-    "ax[0].set_title('Gradient of Image 1')\n",
-    "ax[1].imshow(normgrad2, origin='lower', interpolation='none', cmap='Greys_r')\n",
-    "ax[1].set_title('Gradient of Image 2')\n",
-    "plt.show()"
-   ]
-  },
-  {
-   "cell_type": "code",
-   "execution_count": 21,
-   "metadata": {},
-   "outputs": [
-    {
-     "data": {
-      "image/png": ""
-      "text/plain": [
-       "<Figure size 1296x864 with 2 Axes>"
-      ]
-     },
-     "metadata": {
-      "needs_background": "light"
-     },
-     "output_type": "display_data"
-    }
-   ],
-   "source": [
-    "fig, ax = plt.subplots(1,2, figsize=(18., 12.))\n",
-    "ax[0].imshow(normgrad1, origin='lower', cmap='Greys_r')\n",
-    "arrows1=ax[0].quiver(X, Y, ux1, uy1, units='width', color='cyan', pivot='middle', width=0.005, headwidth=2, headlength=4)\n",
-    "ax[0].set_title('Image 1 gradient magnitude and direction')\n",
-    "ax[1].imshow(normgrad2, origin='lower', cmap='Greys_r')\n",
-    "arrows2=ax[1].quiver(X, Y, ux2, uy2, units='width', color='orange',  pivot='middle', width=0.005, headwidth=2, headlength=4)\n",
-    "ax[1].set_title('Image 2 gradient magnitude and direction')\n",
-    "plt.show()"
-   ]
-  },
-  {
-   "cell_type": "code",
-   "execution_count": 22,
-   "metadata": {
-    "scrolled": true
-   },
-   "outputs": [
-    {
-     "data": {
-      "image/png": ""
-      "text/plain": [
-       "<Figure size 648x432 with 1 Axes>"
-      ]
-     },
-     "metadata": {
-      "needs_background": "light"
-     },
-     "output_type": "display_data"
-    }
-   ],
-   "source": [
-    "fig, ax = plt.subplots(figsize=(9., 6.))\n",
-    "arrows1=ax.quiver(X, Y, ux1, uy1, units='width', color='cyan',   pivot='middle',  width=0.005, headwidth=2, headlength=4)\n",
-    "arrows2=ax.quiver(X, Y, ux2, uy2, units='width', color='orange',  pivot='middle', width=0.005, headwidth=2, headlength=4)\n",
-    "plt.show()"
-   ]
-  },
-  {
-   "cell_type": "code",
-   "execution_count": 23,
-   "metadata": {},
-   "outputs": [
-    {
-     "data": {
-     "image/png": ""
-     "text/plain": [
-       "<Figure size 648x432 with 2 Axes>"
-      ]
-     },
-     "metadata": {
-      "needs_background": "light"
-     },
-     "output_type": "display_data"
-    }
-   ],
-   "source": [
-    "fig, ax = plt.subplots(1,1, figsize=(9., 6.))\n",
-    "im=plt.imshow(np.abs(corrframe)*180.0/np.pi, origin='lower', cmap='spring', interpolation='none')\n",
-    "cb1=plt.colorbar(im,fraction=0.046, pad=0.04)\n",
-    "cb1.set_label(r'$|\\phi|$ [deg]')\n",
-    "ax.set_title('Relative orientation between gradients')\n",
-    "plt.show()"
-   ]
-  },
-  {
-   "cell_type": "code",
-   "execution_count": null,
-   "metadata": {},
-   "outputs": [],
-   "source": []
-  }
- ],
- "metadata": {
-  "kernelspec": {
-   "display_name": "Python 3",
-   "language": "python",
-   "name": "python3"
-  },
-  "language_info": {
-   "codemirror_mode": {
-    "name": "ipython",
-    "version": 3
-   },
-   "file_extension": ".py",
-   "mimetype": "text/x-python",
-   "name": "python",
-   "nbconvert_exporter": "python",
-   "pygments_lexer": "ipython3",
-   "version": "3.8.8"
-  }
- },
- "nbformat": 4,
- "nbformat_minor": 2
-}
+import sys
+import numpy as np
+import matplotlib.pyplot as plt
+from astropy.io import fits
+from scipy import ndimage
+from astrohog2d import HOGcorr_ima
+
+# Step 1: Load the images
+hdul = fits.open('../data/testimage1.fits')
+image1 = hdul[0].data
+hdul.close()
+hdul = fits.open('../data/testimage2.fits')
+image2 = hdul[0].data
+hdul.close()
+
+# Step 2: Display images
+fig, ax = plt.subplots(1, 2, figsize=(16., 12.))
+ax[0].imshow(image1, origin='lower', interpolation='none', cmap='Greys_r')
+ax[0].set_title('Image 1')
+ax[1].imshow(image2, origin='lower', interpolation='none', cmap='Greys_r')
+ax[1].set_title('Image 2')
+plt.show()
+
+# Step 3: Define the size of the derivative kernel
+ksz = 9
+
+# Step 4: Define masks
+sz1 = np.shape(image1)
+mask1 = np.ones_like(image1)
+mask1[0:ksz, :] = 0
+mask1[sz1[0]-1-ksz:sz1[0], :] = 0
+mask1[:, 0:ksz] = 0
+mask1[:, sz1[1]-1-ksz:sz1[1]] = 0
+
+sz2 = np.shape(image2)
+mask2 = np.ones_like(image2)
+mask2[0:ksz, :] = 0
+mask2[sz2[0]-1-ksz:sz2[0], :] = 0
+mask2[:, 0:ksz] = 0
+mask2[:, sz2[1]-1-ksz:sz2[1]] = 0
+
+# Step 5: Calculate the relative orientation angles and uncertainties using HOGcorr_ima
+circstats, corrframe, smoothframe1, smoothframe2 = HOGcorr_ima(
+    image1, image2, ksz=ksz, mask1=mask1, mask2=mask2, 
+    s_ima1=0.1*np.nanmin(image1), s_ima2=0.1*np.nanmin(image2), nruns=3
+)
+
+# Step 6: Print the correlation statistics obtained by astroHOG
+print('Mean resultant vector (r)        ', circstats['RVL'], '+/-', circstats['s_RVL'])
+print('Kuiper statistic (K)             ', circstats['K'], '+/-', circstats['s_K'])
+print('Number of gradient pairs         ', circstats['ngood'])
+
+# Step 7: Compute gradients
+dI1dx = ndimage.gaussian_filter(smoothframe1, [ksz, ksz], order=[0, 1], mode='nearest')
+dI1dy = ndimage.gaussian_filter(smoothframe1, [ksz, ksz], order=[1, 0], mode='nearest')
+normgrad1 = np.sqrt(dI1dx**2 + dI1dy**2)
+udI1dx = dI1dx / normgrad1
+udI1dy = dI1dy / normgrad1
+psi1 = np.arctan2(dI1dy, dI1dx)
+
+dI2dx = ndimage.gaussian_filter(smoothframe2, [ksz, ksz], order=[0, 1], mode='nearest')
+dI2dy = ndimage.gaussian_filter(smoothframe2, [ksz, ksz], order=[1, 0], mode='nearest')
+normgrad2 = np.sqrt(dI2dx**2 + dI2dy**2)
+udI2dx = dI2dx / normgrad2
+udI2dy = dI2dy / normgrad2
+psi2 = np.arctan2(dI2dy, dI2dx)
+
+# Step 8: Visualize gradient magnitudes and directions
+pitch = 50
+sz = np.shape(image1)
+X, Y = np.meshgrid(np.arange(0, sz[1]-1, pitch), np.arange(0, sz[0]-1, pitch))
+ux1 = np.cos(psi1[Y, X])
+uy1 = np.sin(psi1[Y, X])
+ux2 = np.cos(psi2[Y, X])
+uy2 = np.sin(psi2[Y, X])
+
+fig, ax = plt.subplots(1, 2, figsize=(18., 12.))
+ax[0].imshow(normgrad1, origin='lower', interpolation='none', cmap='Greys_r')
+arrows1 = ax[0].quiver(X, Y, ux1, uy1, units='width', color='cyan', pivot='middle', width=0.005, headwidth=2, headlength=4)
+ax[0].set_title('Image 1 gradient magnitude and direction')
+ax[1].imshow(normgrad2, origin='lower', interpolation='none', cmap='Greys_r')
+arrows2 = ax[1].quiver(X, Y, ux2, uy2, units='width', color='orange', pivot='middle', width=0.005, headwidth=2, headlength=4)
+ax[1].set_title('Image 2 gradient magnitude and direction')
+plt.show()
+
+# Step 9: Visualize the relative orientation between gradients
+fig, ax = plt.subplots(1, 1, figsize=(9., 6.))
+im = plt.imshow(np.abs(corrframe) * 180.0 / np.pi, origin='lower', cmap='spring', interpolation='none')
+cb1 = plt.colorbar(im, fraction=0.046, pad=0.04)
+cb1.set_label(r'$|\phi|$ [deg]')
+ax.set_title('Relative orientation between gradients')
+plt.show()
+
