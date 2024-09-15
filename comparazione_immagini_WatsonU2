@@ -1,0 +1,86 @@
+import numpy as np
+import matplotlib.pyplot as plt
+from scipy import ndimage
+import imageio.v2 as imageo
+from astrohog2d import HOGcorr_WatsonU2_ima, HOGcorr_WatsonU2_imaLITE
+
+# Step 1: Load the images
+image1 = imageio.v2.imread('C:/Users/lollo/OneDrive/Desktop/image.001.png', mode='F')
+image2 = imageio.v2.imread('C:/Users/lollo/OneDrive/Desktop/image.002.png', mode='F')
+
+# Step 2: Display images
+fig, ax = plt.subplots(1, 2, figsize=(16., 12.))
+ax[0].imshow(image1, origin='lower', interpolation='none', cmap='Greys_r')
+ax[0].set_title('Image 1')
+ax[1].imshow(image2, origin='lower', interpolation='none', cmap='Greys_r')
+ax[1].set_title('Image 2')
+plt.show()
+
+# Step 3: Define the size of the derivative kernel
+ksz = 9
+
+# Step 4: Define masks
+sz1 = np.shape(image1)
+mask1 = np.ones_like(image1)
+mask1[0:ksz, :] = 0
+mask1[sz1[0]-1-ksz:sz1[0], :] = 0
+mask1[:, 0:ksz] = 0
+mask1[:, sz1[1]-1-ksz:sz1[1]] = 0
+
+sz2 = np.shape(image2)
+mask2 = np.ones_like(image2)
+mask2[0:ksz, :] = 0
+mask2[sz2[0]-1-ksz:sz2[0], :] = 0
+mask2[:, 0:ksz] = 0
+mask2[:, sz2[1]-1-ksz:sz2[1]] = 0
+
+# Step 5: Calculate the relative orientation angles and uncertainties using HOGcorr_WatsonU2_ima
+circstats, corrframe, smoothframe1, smoothframe2 = HOGcorr_WatsonU2_ima(
+    image1, image2, ksz=ksz, mask1=mask1, mask2=mask2, 
+    s_ima1=0.1*np.nanmin(image1), s_ima2=0.1*np.nanmin(image2), nruns=3
+)
+
+# Step 6: Print the correlation statistics obtained by Watson U²
+print('Mean angle (phi)        ', circstats['meanphi'], '+/-', circstats['s_meanphi'])
+print('Watson U² statistic       ', circstats['WatsonU2'], '+/-', circstats['s_WatsonU2'])
+
+# Step 7: Compute gradients
+dI1dx = ndimage.gaussian_filter(smoothframe1, [ksz, ksz], order=[0, 1], mode='nearest')
+dI1dy = ndimage.gaussian_filter(smoothframe1, [ksz, ksz], order=[1, 0], mode='nearest')
+normgrad1 = np.sqrt(dI1dx**2 + dI1dy**2)
+udI1dx = dI1dx / normgrad1
+udI1dy = dI1dy / normgrad1
+psi1 = np.arctan2(dI1dy, dI1dx)
+
+dI2dx = ndimage.gaussian_filter(smoothframe2, [ksz, ksz], order=[0, 1], mode='nearest')
+dI2dy = ndimage.gaussian_filter(smoothframe2, [ksz, ksz], order=[1, 0], mode='nearest')
+normgrad2 = np.sqrt(dI2dx**2 + dI2dy**2)
+udI2dx = dI2dx / normgrad2
+udI2dy = dI2dy / normgrad2
+psi2 = np.arctan2(dI2dy, dI2dx)
+
+# Step 8: Visualize gradient magnitudes and directions
+pitch = 50
+sz = np.shape(image1)
+X, Y = np.meshgrid(np.arange(0, sz[1]-1, pitch), np.arange(0, sz[0]-1, pitch))
+ux1 = np.cos(psi1[Y, X])
+uy1 = np.sin(psi1[Y, X])
+ux2 = np.cos(psi2[Y, X])
+uy2 = np.sin(psi2[Y, X])
+
+fig, ax = plt.subplots(1, 2, figsize=(18., 12.))
+ax[0].imshow(normgrad1, origin='lower', interpolation='none', cmap='Greys_r')
+arrows1 = ax[0].quiver(X, Y, ux1, uy1, units='width', color='cyan', pivot='middle', width=0.005, headwidth=2, headlength=4)
+ax[0].set_title('Image 1 gradient magnitude and direction')
+ax[1].imshow(normgrad2, origin='lower', interpolation='none', cmap='Greys_r')
+arrows2 = ax[1].quiver(X, Y, ux2, uy2, units='width', color='orange', pivot='middle', width=0.005, headwidth=2, headlength=4)
+ax[1].set_title('Image 2 gradient magnitude and direction')
+plt.show()
+
+# Step 9: Visualize the relative orientation between gradients
+fig, ax = plt.subplots(1, 1, figsize=(9., 6.))
+im = plt.imshow(np.abs(corrframe) * 180.0 / np.pi, origin='lower', cmap='spring', interpolation='none')
+cb1 = plt.colorbar(im, fraction=0.046, pad=0.04)
+cb1.set_label(r'$|\phi|$ [deg]')
+ax.set_title('Relative orientation between gradients')
+plt.show()
