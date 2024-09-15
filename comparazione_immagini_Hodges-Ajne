@@ -1,0 +1,88 @@
+import numpy as np
+import matplotlib.pyplot as plt
+from astropy.io import fits
+from scipy import ndimage
+from astrohog2d import HOGcorr_ima_HA, HOGcorr_ima_HA_LITE
+import imageio.v2 as imageio
+
+def load_image(file_path):
+    """ Load an image from the specified file path. """
+    try:
+        return imageio.v2.imread(file_path, mode='F')
+    except FileNotFoundError:
+        print(f"File not found: {file_path}")
+        sys.exit(1)
+
+# Step 1: Load the images
+image1 = load_image('C:/Users/lollo/OneDrive/Desktop/image.001.png')
+image2 = load_image('C:/Users/lollo/OneDrive/Desktop/image.002.png')
+
+# Step 2: Display images
+fig, ax = plt.subplots(1, 2, figsize=(16., 12.))
+ax[0].imshow(image1, origin='lower', interpolation='none', cmap='Greys_r')
+ax[0].set_title('Image 1')
+ax[1].imshow(image2, origin='lower', interpolation='none', cmap='Greys_r')
+ax[1].set_title('Image 2')
+plt.show()
+
+# Step 3: Define the size of the derivative kernel
+ksz = 9
+
+# Step 4: Define masks
+def create_mask(image, ksz):
+    mask = np.ones_like(image)
+    mask[:ksz, :] = 0
+    mask[-ksz:, :] = 0
+    mask[:, :ksz] = 0
+    mask[:, -ksz:] = 0
+    return mask
+
+mask1 = create_mask(image1, ksz)
+mask2 = create_mask(image2, ksz)
+
+# Step 5: Calculate the relative orientation angles and uncertainties using Hodges-Ajne method
+circstats, corrframe, smoothframe1, smoothframe2 = HOGcorr_ima_HA(
+    image1, image2, ksz=ksz, mask1=mask1, mask2=mask2, 
+    s_ima1=0.1*np.nanmin(image1), s_ima2=0.1*np.nanmin(image2), nruns=3
+)
+
+# Step 6: Print the correlation statistics obtained by Hodges-Ajne method
+print('Mean angle (phi)        ', circstats['meanphi'], '+/-', circstats['s_meanphi'])
+print('Hodges-Ajne statistic (H)', circstats['HodgesAjne'], '+/-', circstats['s_HodgesAjne'])
+
+# Step 7: Compute gradients
+def compute_gradients(image, ksz):
+    dI_dx = ndimage.gaussian_filter(image, [ksz, ksz], order=[0, 1], mode='nearest')
+    dI_dy = ndimage.gaussian_filter(image, [ksz, ksz], order=[1, 0], mode='nearest')
+    norm_grad = np.sqrt(dI_dx**2 + dI_dy**2)
+    udI_dx = dI_dx / norm_grad
+    udI_dy = dI_dy / norm_grad
+    psi = np.arctan2(dI_dy, dI_dx)
+    return norm_grad, udI_dx, udI_dy, psi
+
+normgrad1, udI1dx, udI1dy, psi1 = compute_gradients(smoothframe1, ksz)
+normgrad2, udI2dx, udI2dy, psi2 = compute_gradients(smoothframe2, ksz)
+
+# Step 8: Visualize gradient magnitudes and directions
+pitch = 50
+sz = np.shape(image1)
+X, Y = np.meshgrid(np.arange(0, sz[1], pitch), np.arange(0, sz[0], pitch))
+
+fig, ax = plt.subplots(1, 2, figsize=(18., 12.))
+ax[0].imshow(normgrad1, origin='lower', interpolation='none', cmap='Greys_r')
+arrows1 = ax[0].quiver(X, Y, np.cos(psi1[Y, X]), np.sin(psi1[Y, X]), units='width', color='cyan', pivot='middle', width=0.005, headwidth=2, headlength=4)
+ax[0].set_title('Image 1 Gradient Magnitude and Direction')
+
+ax[1].imshow(normgrad2, origin='lower', interpolation='none', cmap='Greys_r')
+arrows2 = ax[1].quiver(X, Y, np.cos(psi2[Y, X]), np.sin(psi2[Y, X]), units='width', color='orange', pivot='middle', width=0.005, headwidth=2, headlength=4)
+ax[1].set_title('Image 2 Gradient Magnitude and Direction')
+
+plt.show()
+
+# Step 9: Visualize the relative orientation between gradients
+fig, ax = plt.subplots(1, 1, figsize=(9., 6.))
+im = plt.imshow(np.abs(corrframe) * 180.0 / np.pi, origin='lower', cmap='spring', interpolation='none')
+cb1 = plt.colorbar(im, fraction=0.046, pad=0.04)
+cb1.set_label(r'$|\phi|$ [deg]')
+ax.set_title('Relative Orientation Between Gradients')
+plt.show()
