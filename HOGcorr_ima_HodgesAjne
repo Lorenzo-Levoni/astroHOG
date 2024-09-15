@@ -1,0 +1,207 @@
+import numpy as np
+from scipy import ndimage
+from scipy.stats import circmean
+from tqdm import tqdm
+
+# Funzione vprint per stampe condizionali
+def vprint(obj, verbose=True):
+    if verbose:
+        print(obj)
+
+# Funzione per il Mean Squared Error (MSE)
+def mse(x, y):
+    return np.linalg.norm(x - y)
+
+# Funzione principale che calcola la correlazione spaziale usando Hodges-Ajne
+def HOGcorr_ima_HA(ima1, ima2, s_ima1=None, s_ima2=None, pxsz=1., ksz=1., res=1., nruns=0, mask1=None, mask2=None, gradthres1=None, gradthres2=None, weights=None, verbose=True):
+    """ 
+    Calcola la correlazione spaziale tra ima1 e ima2 usando il metodo HOG e il test di Hodges-Ajne.
+
+    Parametri
+    ----------
+    ima1 : array della prima immagine da confrontare 
+    ima2 : array della seconda immagine da confrontare
+    s_ima1 : deviazione standard per ima1
+    s_ima2 : deviazione standard per ima2
+    pxsz : dimensione del pixel
+    ksz : dimensione del kernel derivativo in unità di pixel
+    nruns : numero di run Monte Carlo
+
+    Ritorna
+    -------
+    circstats : statistiche circolari del test di Hodges-Ajne
+    corrframe : array contenente gli angoli tra i gradienti delle immagini
+    sima1     : ima1 smussato con un filtro gaussiano 2D
+    sima2     : ima2 smussato con un filtro gaussiano 2D
+    """
+
+    # Verifica che le immagini abbiano la stessa dimensione
+    assert ima1.shape == ima2.shape, "Le dimensioni di ima1 e ima2 devono coincidere"
+
+    # Definizione delle iterazioni Monte Carlo
+    if nruns == 0:
+        nruns = 1
+
+    # Assegna i pesi se non specificati
+    if weights is None:
+        weights = np.ones_like(ima1)
+
+    # Assegna maschere se non sono specificate
+    if mask1 is None:
+        mask1 = np.ones_like(ima1)
+    if mask2 is None:
+        mask2 = np.ones_like(ima2)
+
+    # Dimensione del kernel in pixel
+    pxksz = (ksz / (2 * np.sqrt(2. * np.log(2.)))) / pxsz
+
+    # Smoothing delle immagini con un filtro gaussiano 2D
+    sima1 = ndimage.gaussian_filter(ima1, sigma=pxksz)
+    sima2 = ndimage.gaussian_filter(ima2, sigma=pxksz)
+
+    # Calcolo dei gradienti delle immagini
+    grad1 = np.gradient(sima1)
+    grad2 = np.gradient(sima2)
+
+    # Modulo del gradiente
+    gradmod1 = np.sqrt(grad1[0]**2. + grad1[1]**2.)
+    gradmod2 = np.sqrt(grad2[0]**2. + grad2[1]**2.)
+
+    # Normalizzazione dei gradienti
+    grad1normx = grad1[1] / np.where(gradmod1 == 0, 1, gradmod1)
+    grad1normy = grad1[0] / np.where(gradmod1 == 0, 1, gradmod1)
+    grad2normx = grad2[1] / np.where(gradmod2 == 0, 1, gradmod2)
+    grad2normy = grad2[0] / np.where(gradmod2 == 0, 1, gradmod2)
+
+    # Calcolo della correlazione tra i gradienti
+    corrframe = np.arctan2(
+        grad2normx * grad1normy - grad2normy * grad1normx,
+        grad2normx * grad1normx + grad2normy * grad1normy
+    )
+
+    # Soglie di gradiente
+    if gradthres1 is None:
+        gradthres1 = np.percentile(gradmod1[np.isfinite(gradmod1)], 15)
+    if gradthres2 is None:
+        gradthres2 = np.percentile(gradmod2[np.isfinite(gradmod2)], 15)
+
+    # Applicazione delle maschere e soglie
+    corrframe[
+        np.logical_or(
+            np.logical_or(gradmod1 <= gradthres1, gradmod2 <= gradthres2),
+            np.logical_or(mask1 == 0, mask2 == 0)
+        )
+    ] = np.nan
+
+    # Simulazioni Monte Carlo
+    hajnevals = []
+    meanphis = []
+    for run in tqdm(range(nruns), disable=not verbose):
+        if nruns > 1:
+            ima1_rand = np.random.normal(ima1, s_ima1) if s_ima1 is not None else ima1
+            ima2_rand = np.random.normal(ima2, s_ima2) if s_ima2 is not None else ima2
+        else:
+            ima1_rand, ima2_rand = ima1, ima2
+
+        hodges_ajne_res = HOG_HodgesAjne(corrframe[np.isfinite(corrframe)], weights=weights)
+        hajnevals.append(hodges_ajne_res['H'])
+        meanphis.append(hodges_ajne_res['meanphi'])
+
+    # Media e deviazione standard delle statistiche di Hodges-Ajne
+    mean_hajne = np.mean(hajnevals)
+    std_hajne = np.std(hajnevals)
+    meanphi = circmean(meanphis, low=-np.pi, high=np.pi)
+
+    circstats = {
+        'HodgesAjne': mean_hajne,
+        's_HodgesAjne': std_hajne,
+        'meanphi': meanphi,
+        's_meanphi': np.std(meanphis)
+    }
+
+    return circstats, corrframe, sima1, sima2
+
+
+# Funzione LITE compatibile con HOG_HodgesAjnelite
+def HOGcorr_ima_HA_LITE(ima1, ima2, pxsz=1., ksz=1., res=1., mask1=None, mask2=None, gradthres1=None, gradthres2=None, weights=None, verbose=True):
+    """ 
+    Calcola la correlazione spaziale tra ima1 e ima2 usando il metodo HOG e il test di Hodges-Ajne.
+
+    Parametri
+    ----------
+    ima1 : array della prima immagine da confrontare 
+    ima2 : array della seconda immagine da confrontare
+    pxsz : dimensione del pixel
+    ksz : dimensione del kernel derivativo in unità di pixel
+
+    Ritorna
+    -------
+    circstats:  Statistiche che descrivono la correlazione tra le immagini di input
+    corrframe : array contenente gli angoli tra i gradienti delle immagini
+    sima1     : ima1 smussato con un filtro gaussiano 2D
+    sima2     : ima2 smussato con un filtro gaussiano 2D
+    """
+
+    # Check if the images match
+    assert ima1.shape == ima2.shape, "Dimensions of ima2 and ima1 must match"
+
+    # Assegna pesi se non sono specificati
+    if weights is None:
+        weights = np.ones_like(ima1)
+
+    # Assegna maschere se non sono specificate
+    if mask1 is None:
+        mask1 = np.ones_like(ima1)
+    if mask2 is None:
+        mask2 = np.ones_like(ima2)
+
+    # Dimensione del kernel
+    pxksz = (ksz / (2 * np.sqrt(2. * np.log(2.)))) / pxsz
+
+    # Smoothing delle immagini con un filtro gaussiano 2D
+    sima1 = ndimage.gaussian_filter(ima1, sigma=pxksz)
+    sima2 = ndimage.gaussian_filter(ima2, sigma=pxksz)
+
+    # Calcolo dei gradienti
+    grad1 = np.gradient(sima1)
+    grad2 = np.gradient(sima2)
+
+    # Modulo del gradiente
+    gradmod1 = np.sqrt(grad1[0]**2. + grad1[1]**2.)
+    gradmod2 = np.sqrt(grad2[0]**2. + grad2[1]**2.)
+
+    # Normalizzazione dei gradienti
+    grad1normx = grad1[1] / np.where(gradmod1 == 0, 1, gradmod1)
+    grad1normy = grad1[0] / np.where(gradmod1 == 0, 1, gradmod1)
+    grad2normx = grad2[1] / np.where(gradmod2 == 0, 1, gradmod2)
+    grad2normy = grad2[0] / np.where(gradmod2 == 0, 1, gradmod2)
+
+    # Calcolo della correlazione tra i gradienti
+    corrframe = np.arctan2(
+        grad2normx * grad1normy - grad2normy * grad1normx,
+        grad2normx * grad1normx + grad2normy * grad1normy
+    )
+
+    # Soglie di gradiente
+    if gradthres1 is None:
+        gradthres1 = np.percentile(gradmod1[np.isfinite(gradmod1)], 15)
+    if gradthres2 is None:
+        gradthres2 = np.percentile(gradmod2[np.isfinite(gradmod2)], 15)
+
+    # Applicazione delle maschere e soglie
+    corrframe[
+        np.logical_or(
+            np.logical_or(gradmod1 <= gradthres1, gradmod2 <= gradthres2),
+            np.logical_or(mask1 == 0, mask2 == 0)
+        )
+    ] = np.nan
+
+    # Calcolo della statistica di Hodges-Ajne
+    hodges_ajne_res = HOG_HodgesAjnelite(corrframe[np.isfinite(corrframe)], weights=weights)
+    
+    circstats = {
+        'HodgesAjne': hodges_ajne_res['H'],
+        'meanphi': hodges_ajne_res['meanphi'],
+    }
+
+    return circstats, corrframe, sima1, sima2
