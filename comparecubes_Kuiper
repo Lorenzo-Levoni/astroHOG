@@ -1,501 +1,164 @@
-{
- "cells": [
-  {
-   "cell_type": "code",
-   "execution_count": 1,
-   "metadata": {},
-   "outputs": [],
-   "source": [
-    "# Example of the comparison of two data cubes using the astroHOG \n",
-    "# \n",
-    "# Prepared by Juan D. Soler (juandiegosoler@gmail.com)\n",
-    "\n",
-    "import sys\n",
-    "sys.path.append('../')\n",
-    "from astrohog2d import *\n",
-    "from astrohog2d1v import *\n",
-    "\n",
-    "import matplotlib.pyplot as plt\n",
-    "from astropy.io import fits\n",
-    "\n",
-    "from scipy import ndimage"
-   ]
-  },
-  {
-   "cell_type": "code",
-   "execution_count": 2,
-   "metadata": {},
-   "outputs": [],
-   "source": [
-    "# Load the cubes that you plan to compare\n",
-    "# Just for reference, I assume that the first index runs over the non-spatial coordinate\n",
-    "# Also assume that the cubes are spatially aligned and are reprojected into the same grid \n",
-    "\n",
-    "hdul = fits.open('../data/testcube1.fits')\n",
-    "cube1=hdul[0].data\n",
-    "hdul.close()\n",
-    "hdul = fits.open('../data/testcube2.fits')\n",
-    "cube2=hdul[0].data\n",
-    "hdul.close()"
-   ]
-  },
-  {
-   "cell_type": "code",
-   "execution_count": 3,
-   "metadata": {},
-   "outputs": [
-    {
-     "data": {
-      "text/plain": [
-       "<Figure size 1152x360 with 2 Axes>"
-      ]
-     },
-     "metadata": {
-      "needs_background": "light"
-     },
-     "output_type": "display_data"
-    }
-   ],
-   "source": [
-    "fig, ax = plt.subplots(1,2, figsize=(16., 5.))\n",
-    "plt.rc('font', size=12)\n",
-    "ax[0].imshow(cube1.sum(axis=0), origin='lower', cmap='magma', interpolation='none')\n",
-    "ax[0].set_title('Integrated cube 1')\n",
-    "ax[0].tick_params(axis='y',labelrotation=90)\n",
-    "ax[1].imshow(cube2.sum(axis=0), origin='lower', cmap='viridis', interpolation='none')\n",
-    "ax[1].set_title('Integrated cube 2')\n",
-    "ax[1].tick_params(axis='y',labelrotation=90)\n",
-    "plt.show()"
-   ]
-  },
-  {
-   "cell_type": "code",
-   "execution_count": 4,
-   "metadata": {},
-   "outputs": [],
-   "source": [
-    "# Here you select the size of your derivative kernel in pixels\n",
-    "ksz=10"
-   ]
-  },
-  {
-   "cell_type": "code",
-   "execution_count": 5,
-   "metadata": {},
-   "outputs": [],
-   "source": [
-    "# Here I define the masks for both cubes\n",
-    "# For the sake of simplicity, I'm only masking the edges of the cubes\n",
-    "sz1=np.shape(cube1)\n",
-    "mask1=1.+0.*cube1\n",
-    "mask1[:,0:ksz,:]=0.\n",
-    "mask1[:,sz1[1]-1-ksz:sz1[1]-1,:]=0.\n",
-    "mask1[:,:,0:ksz]=0.\n",
-    "mask1[:,:,sz1[2]-1-ksz:sz1[2]-1]=0.\n",
-    "sz2=np.shape(cube2)\n",
-    "mask2=1.+0.*cube2\n",
-    "mask2[:,0:ksz,:]=0.\n",
-    "mask2[:,sz2[1]-1-ksz:sz2[1]-1,:]=0.\n",
-    "mask2[:,:,0:ksz]=0.\n",
-    "mask2[:,:,sz2[2]-1-ksz:sz2[2]-1]=0."
-   ]
-  },
-  {
-   "cell_type": "code",
-   "execution_count": 6,
-   "metadata": {},
-   "outputs": [],
-   "source": [
-    "# Here you define the channel ranges over which you want to compare the cubes\n",
-    "zmin1=0\n",
-    "zmax1=sz1[0]-1\n",
-    "zmin2=0\n",
-    "zmax2=sz2[0]-1"
-   ]
-  },
-  {
-   "cell_type": "code",
-   "execution_count": 7,
-   "metadata": {},
-   "outputs": [],
-   "source": [
-    "# Statistical weights to account for the number of independent gradient pairs within a kernel\n",
-    "weights=(1./ksz)**2"
-   ]
-  },
-  {
-   "cell_type": "code",
-   "execution_count": 8,
-   "metadata": {},
-   "outputs": [
-    {
-     "name": "stderr",
-     "output_type": "stream",
-     "text": [
-      "\r",
+import sys
+sys.path.append('../')
+from astrohog2d import *
+from astrohog2d1v import *
 
-   ],
-   "source": [
-    "# Run the HOG\n",
-    "circstats, corrcube, scube1, scube2 = HOGcorr_ppvcubes(cube1, cube2, zmin1, zmax1, zmin2, zmax2, ksz=ksz, mask1=mask1, mask2=mask2, weights=weights)"
-   ]
-  },
-  {
-   "cell_type": "code",
-   "execution_count": 9,
-   "metadata": {},
-   "outputs": [],
-   "source": [
-    "# The outputs are: \n",
-    "# 1. 'corrplane' an array with all of the metrics to evaluate the correlation between the cubes\n",
-    "np.shape(circstats['V'])\n",
-    "vplane=circstats['V']\n",
-    "vvec=np.sort(np.ravel(vplane))[::-1]\n",
-    "indmax1, indmax2 =(vplane == vvec[0]).nonzero()"
-   ]
-  },
-  {
-   "cell_type": "code",
-   "execution_count": 10,
-   "metadata": {},
-   "outputs": [
-    {
-     "data": {
-      "text/plain": [
-       "(6, 6, 768, 1024)"
-      ]
-     },
-     "execution_count": 10,
-     "metadata": {},
-     "output_type": "execute_result"
-    }
-   ],
-   "source": [
-    "# 2. 'corrcube', which is the array containing all the relative orientation angles between gradients\n",
-    "np.shape(corrcube)"
-   ]
-  },
-  {
-   "cell_type": "code",
-   "execution_count": 11,
-   "metadata": {},
-   "outputs": [
-    {
-     "data": {
-      "text/plain": [
-       "<Figure size 432x432 with 2 Axes>"
-      ]
-     },
-     "metadata": {
-      "needs_background": "light"
-     },
-     "output_type": "display_data"
-    }
-   ],
-   "source": [
-    "# Here for example, we show the projected Rayleight statistic (V)\n",
-    "# Large V values indicate that the angle distribution is not flat and is centred on zero\n",
-    "# V values around zero correspond to a flat angle distribution.\n",
-    "\n",
-    "fig, ax = plt.subplots(1,1, figsize=(6., 6.))\n",
-    "plt.rc('font', size=12)\n",
-    "im=ax.imshow(circstats['V'], origin='lower',clim=[0.,np.nanmax(circstats['V'])], interpolation='None')\n",
-    "ax.scatter(indmax1, indmax2, marker='*', color='magenta')\n",
-    "ax.set_xlabel('Channel in cube 2')\n",
-    "ax.set_ylabel('Channel in cube 1')\n",
-    "ax.tick_params(axis='y',labelrotation=90)\n",
-    "cbl=plt.colorbar(im, fraction=0.046, pad=0.04)\n",
-    "cbl.ax.set_title(r'$V$')\n",
-    "cbl.ax.tick_params(axis='y',labelrotation=90)\n",
-    "plt.show()"
-   ]
-  },
-  {
-   "cell_type": "code",
-   "execution_count": 12,
-   "metadata": {
-    "scrolled": true
-   },
-   "outputs": [
-    {
-     "data": {
-      "text/plain": [
-       "<Figure size 1152x360 with 2 Axes>"
-      ]
-     },
-     "metadata": {
-      "needs_background": "light"
-     },
-     "output_type": "display_data"
-    }
-   ],
-   "source": [
-    "# Plot the pair of channels with the highest spatial correlations\n",
-    "#\n",
-    "#\n",
-    "\n",
-    "fig, ax = plt.subplots(1,2, figsize=(16., 5.))\n",
-    "ax[0].imshow(scube1[indmax1[0],:,:], origin='lower', cmap='magma', interpolation='none')\n",
-    "ax[0].set_title('Image 1')\n",
-    "ax[0].tick_params(axis='y',labelrotation=90)\n",
-    "ax[1].imshow(scube2[indmax2[0],:,:], origin='lower', cmap='viridis', interpolation='none')\n",
-    "ax[1].set_title('Image 2')\n",
-    "ax[1].tick_params(axis='y',labelrotation=90)\n",
-    "plt.show()\n"
-   ]
-  },
-  {
-   "cell_type": "code",
-   "execution_count": 13,
-   "metadata": {
-    "scrolled": true
-   },
-   "outputs": [
-    {
-     "data": {
-      "text/plain": [
-       "<Figure size 576x360 with 2 Axes>"
-      ]
-     },
-     "metadata": {
-      "needs_background": "light"
-     },
-     "output_type": "display_data"
-    }
-   ],
-   "source": [
-    "# Plot the relative orientation angle between the gradients in the two images with the highest correlation\n",
-    "#\n",
-    "#\n",
-    "fig, ax = plt.subplots(1,1, figsize=(8., 5.))\n",
-    "im=ax.imshow(np.abs(corrcube[indmax1[0],indmax2[0],:,:])*180.0/np.pi, origin='lower', cmap='spring',interpolation='None')\n",
-    "ax.tick_params(axis='y',labelrotation=90)\n",
-    "cbl=plt.colorbar(im,fraction=0.046, pad=0.04)\n",
-    "cbl.ax.set_title(r'$|\\phi|$ [deg]')\n",
-    "cbl.ax.tick_params(axis='y',labelrotation=90)\n",
-    "ax.set_title('Relative orientation between gradient vectors')\n",
-    "plt.show()"
-   ]
-  },
-  {
-   "cell_type": "code",
-   "execution_count": 14,
-   "metadata": {},
-   "outputs": [],
-   "source": [
-    "# Making block average with block size matching the kernel size\n",
-    "sz=np.shape(cube1)\n",
-    "nbyA=8; nbxA=int(np.ceil(nbyA*sz[1]/sz[2]))\n",
-    "vblocksA=imablockaverage(corrcube[indmax1[0],indmax2[0],:,:], nbx=nbxA, nby=nbyA, weight=(1./ksz)**2)"
-   ]
-  },
-  {
-   "cell_type": "code",
-   "execution_count": 15,
-   "metadata": {},
-   "outputs": [],
-   "source": [
-    "# Making block average with block size matching the kernel size\n",
-    "nbyB=int(0.25*sz[2]/ksz); nbxB=int(nbyB*sz[1]/sz[2])\n",
-    "vblocksB=imablockaverage(corrcube[indmax1[0],indmax2[0],:,:], nbx=nbxB, nby=nbyB, weight=(1./ksz)**2)"
-   ]
-  },
-  {
-   "cell_type": "code",
-   "execution_count": 16,
-   "metadata": {},
-   "outputs": [
-    {
-     "data": {
-      "text/plain": [
-       "<Figure size 432x576 with 4 Axes>"
-      ]
-     },
-     "metadata": {
-      "needs_background": "light"
-     },
-     "output_type": "display_data"
-    }
-   ],
-   "source": [
-    "fig = plt.figure(figsize=(6.0, 8.0))\n",
-    "plt.rc('font', size=10)\n",
-    "ax1=plt.subplot(211)\n",
-    "ax1.set_title(str(nbxA)+'x'+str(nbyA)+' blocks')\n",
-    "im=ax1.imshow(vblocksA, origin='lower', vmin=0., interpolation='none', aspect='auto')\n",
-    "ax1.tick_params(axis='y',labelrotation=90)\n",
-    "cbl=plt.colorbar(im,fraction=0.046, pad=0.04)\n",
-    "cbl.ax.set_title(r'$V$')\n",
-    "cbl.ax.tick_params(axis='y',labelrotation=90)\n",
-    "ax2=plt.subplot(212)\n",
-    "ax2.set_title(str(nbxB)+'x'+str(nbyB)+' blocks')\n",
-    "im=ax2.imshow(vblocksB, origin='lower', vmin=0., interpolation='none', aspect='auto')\n",
-    "ax2.tick_params(axis='y',labelrotation=90)\n",
-    "cbl=plt.colorbar(im,fraction=0.046, pad=0.04)\n",
-    "cbl.ax.set_title(r'$V$')\n",
-    "cbl.ax.tick_params(axis='y',labelrotation=90)\n",
-    "plt.show()"
-   ]
-  },
-  {
-   "cell_type": "code",
-   "execution_count": 17,
-   "metadata": {},
-   "outputs": [
-    {
-     "data": {
-      "text/plain": [
-       "<Figure size 1080x360 with 2 Axes>"
-      ]
-     },
-     "metadata": {
-      "needs_background": "light"
-     },
-     "output_type": "display_data"
-    }
-   ],
-   "source": [
-    "# Plot the pair of channels with the second highest spatial correlations\n",
-    "#\n",
-    "#\n",
-    "indmax1, indmax2 =(vplane == vvec[1]).nonzero()\n",
-    "\n",
-    "fig, ax = plt.subplots(1,2, figsize=(15., 5.))\n",
-    "ax[0].imshow(scube1[indmax1[0],:,:], origin='lower', cmap='magma', interpolation='none')\n",
-    "ax[0].set_title('Image 1')\n",
-    "ax[0].tick_params(axis='y',labelrotation=90)\n",
-    "ax[1].imshow(scube2[indmax2[0],:,:], origin='lower', cmap='viridis', interpolation='none')\n",
-    "ax[1].set_title('Image 2')\n",
-    "ax[1].tick_params(axis='y',labelrotation=90)\n",
-    "plt.show()"
-   ]
-  },
-  {
-   "cell_type": "code",
-   "execution_count": 18,
-   "metadata": {},
-   "outputs": [
-    {
-     "name": "stderr",
-     "output_type": "stream",
-     "text": [
-      "\r",
-      "  0%|          | 0/25 [00:00<?, ?it/s]"
-     ]
-    },
-    
-   ],
-   "source": [
-    "# Running the jackknife tests\n",
-    "circstats01, corrcube01, scube1j01, scube2j01 = HOGcorr_ppvcubes(cube1, cube2[:,:,::-1], zmin1, zmax1, zmin2, zmax2, ksz=ksz, mask1=mask1, mask2=mask2, weights=weights)\n",
-    "vplane01=circstats01['V']\n",
-    "circstats10, corrcube10, scube1j10, scube2j10 = HOGcorr_ppvcubes(cube1, cube2[:,::-1,:], zmin1, zmax1, zmin2, zmax2, ksz=ksz, mask1=mask1, mask2=mask2, weights=weights)\n",
-    "vplane10=circstats10['V']\n",
-    "circstats11, corrcube11, scube1j11, scube2j11 = HOGcorr_ppvcubes(cube1, cube2[:,::-1,::-1], zmin1, zmax1, zmin2, zmax2, ksz=ksz, mask1=mask1, mask2=mask2, weights=weights)\n",
-    "vplane11=circstats11['V']"
-   ]
-  },
-  {
-   "cell_type": "code",
-   "execution_count": 19,
-   "metadata": {},
-   "outputs": [],
-   "source": [
-    "# Getting maximum value of the projected Rayleigh statistic (V) for the plots\n",
-    "maxV=np.nanmax([vplane,vplane01,vplane10,vplane11])\n",
-    "vvec=np.sort(np.ravel(vplane))[::-1]\n",
-    "indmax1, indmax2 =(vplane == vvec[0]).nonzero()"
-   ]
-  },
-  {
-   "cell_type": "code",
-   "execution_count": 20,
-   "metadata": {},
-   "outputs": [
-    {
-     "data": {
-      "text/plain": [
-       "<Figure size 720x720 with 8 Axes>"
-      ]
-     },
-     "metadata": {
-      "needs_background": "light"
-     },
-     "output_type": "display_data"
-    }
-   ],
-   "source": [
-    "# Plotting jackknife tests\n",
-    "#\n",
-    "#\n",
-    "fig = plt.figure(figsize=(10.0, 10.0))\n",
-    "plt.rc('font', size=10)\n",
-    "ax1=plt.subplot(221)\n",
-    "ax1.set_title('Original data')\n",
-    "im=ax1.imshow(vplane, origin='lower',clim=[0.,maxV], interpolation='None')\n",
-    "ax1.scatter(indmax1, indmax2, marker='*', color='magenta')\n",
-    "ax1.set_xlabel(' '); ax1.set_ylabel('Channel in cube 1')\n",
-    "ax1.tick_params(axis='y',labelrotation=90)\n",
-    "cbl=plt.colorbar(im, fraction=0.046, pad=0.04)\n",
-    "cbl.ax.set_title(r'$V$')\n",
-    "cbl.ax.tick_params(axis='y',labelrotation=90)\n",
-    "ax2=plt.subplot(222)\n",
-    "ax2.set_title('Vertical flipping')\n",
-    "im=ax2.imshow(vplane10, origin='lower',clim=[0.,maxV], interpolation='None')\n",
-    "ax2.scatter(indmax1, indmax2, marker='*', color='magenta')\n",
-    "ax2.set_xlabel(' '); ax2.set_ylabel(' ')\n",
-    "ax2.tick_params(axis='y',labelrotation=90)\n",
-    "cbl=plt.colorbar(im, fraction=0.046, pad=0.04)\n",
-    "cbl.ax.set_title(r'$V$')\n",
-    "cbl.ax.tick_params(axis='y',labelrotation=90)\n",
-    "ax3=plt.subplot(223)\n",
-    "ax3.set_title('Horizontal flipping')\n",
-    "im=ax3.imshow(vplane01, origin='lower',clim=[0.,maxV], interpolation='None')\n",
-    "ax3.scatter(indmax1, indmax2, marker='*', color='magenta')\n",
-    "ax3.set_xlabel('Channel in cube 2'); ax3.set_ylabel('Channel in cube 1')\n",
-    "ax3.tick_params(axis='y',labelrotation=90)\n",
-    "cbl=plt.colorbar(im, fraction=0.046, pad=0.04)\n",
-    "cbl.ax.set_title(r'$V$')\n",
-    "cbl.ax.tick_params(axis='y',labelrotation=90)\n",
-    "ax4=plt.subplot(224)\n",
-    "ax4.set_title('Horizontal and vertical flipping')\n",
-    "im=ax4.imshow(vplane11, origin='lower',clim=[0.,maxV], interpolation='None')\n",
-    "ax4.scatter(indmax1, indmax2, marker='*', color='magenta')\n",
-    "ax4.set_xlabel('Channel in cube 2'); ax4.set_ylabel(' ')\n",
-    "ax4.tick_params(axis='y',labelrotation=90)\n",
-    "cbl=plt.colorbar(im, fraction=0.046, pad=0.04)\n",
-    "cbl.ax.set_title(r'$V$')\n",
-    "cbl.ax.tick_params(axis='y',labelrotation=90)\n",
-    "plt.show()"
-   ]
-  },
-  {
-   "cell_type": "code",
-   "execution_count": null,
-   "metadata": {},
-   "outputs": [],
-   "source": []
-  }
- ],
- "metadata": {
-  "kernelspec": {
-   "display_name": "Python 3",
-   "language": "python",
-   "name": "python3"
-  },
-  "language_info": {
-   "codemirror_mode": {
-    "name": "ipython",
-    "version": 3
-   },
-   "file_extension": ".py",
-   "mimetype": "text/x-python",
-   "name": "python",
-   "nbconvert_exporter": "python",
-   "pygments_lexer": "ipython3",
-   "version": "3.8.8"
-  }
- },
- "nbformat": 4,
- "nbformat_minor": 2
-}
+import matplotlib.pyplot as plt
+from astropy.io import fits
+
+from scipy import ndimage
+import numpy as np
+
+# Carica i cubi di dati
+hdul = fits.open('../data/testcube1.fits')
+cube1 = hdul[0].data
+hdul.close()
+hdul = fits.open('../data/testcube2.fits')
+cube2 = hdul[0].data
+hdul.close()
+
+# Visualizza i cubi di dati
+fig, ax = plt.subplots(1, 2, figsize=(16., 5.))
+plt.rc('font', size=12)
+ax[0].imshow(cube1.sum(axis=0), origin='lower', cmap='magma', interpolation='none')
+ax[0].set_title('Integrated cube 1')
+ax[0].tick_params(axis='y', labelrotation=90)
+ax[1].imshow(cube2.sum(axis=0), origin='lower', cmap='viridis', interpolation='none')
+ax[1].set_title('Integrated cube 2')
+ax[1].tick_params(axis='y', labelrotation=90)
+plt.show()
+
+# Definisci la dimensione del kernel e le maschere
+ksz = 10
+
+sz1 = np.shape(cube1)
+mask1 = 1. + 0. * cube1
+mask1[:, 0:ksz, :] = 0.
+mask1[:, sz1[1]-1-ksz:sz1[1]-1, :] = 0.
+mask1[:, :, 0:ksz] = 0.
+mask1[:, :, sz1[2]-1-ksz:sz1[2]-1] = 0.
+
+sz2 = np.shape(cube2)
+mask2 = 1. + 0. * cube2
+mask2[:, 0:ksz, :] = 0.
+mask2[:, sz2[1]-1-ksz:sz2[1]-1, :] = 0.
+mask2[:, :, 0:ksz] = 0.
+mask2[:, :, sz2[2]-1-ksz:sz2[2]-1] = 0.
+
+# Definisci i range dei canali e i pesi statistici
+zmin1 = 0
+zmax1 = sz1[0] - 1
+zmin2 = 0
+zmax2 = sz2[0] - 1
+
+weights = (1. / ksz)**2
+
+# Esegui la funzione HOGcorr_ppvcubes per ottenere le statistiche Kuiper
+circstats, corrcube, scube1, scube2 = HOGcorr_ppvcubes(
+    cube1, cube2, zmin1, zmax1, zmin2, zmax2, ksz=ksz, mask1=mask1, mask2=mask2, weights=weights
+)
+
+# Estrai e visualizza le statistiche Kuiper
+vplane = circstats['V']
+vvec = np.sort(np.ravel(vplane))[::-1]
+indmax1, indmax2 = (vplane == vvec[0]).nonzero()
+
+fig, ax = plt.subplots(1, 1, figsize=(6., 6.))
+plt.rc('font', size=12)
+im = ax.imshow(vplane, origin='lower', clim=[0., np.nanmax(vplane)], interpolation='None')
+ax.scatter(indmax1, indmax2, marker='*', color='magenta')
+ax.set_xlabel('Channel in cube 2')
+ax.set_ylabel('Channel in cube 1')
+ax.tick_params(axis='y', labelrotation=90)
+cbl = plt.colorbar(im, fraction=0.046, pad=0.04)
+cbl.ax.set_title(r'$V$')
+cbl.ax.tick_params(axis='y', labelrotation=90)
+plt.show()
+
+# Visualizza le immagini con la massima correlazione
+fig, ax = plt.subplots(1, 2, figsize=(16., 5.))
+ax[0].imshow(scube1[indmax1[0], :, :], origin='lower', cmap='magma', interpolation='none')
+ax[0].set_title('Image 1')
+ax[0].tick_params(axis='y', labelrotation=90)
+ax[1].imshow(scube2[indmax2[0], :, :], origin='lower', cmap='viridis', interpolation='none')
+ax[1].set_title('Image 2')
+ax[1].tick_params(axis='y', labelrotation=90)
+plt.show()
+
+# Visualizza l'angolo di orientamento relativo tra i gradienti
+fig, ax = plt.subplots(1, 1, figsize=(8., 5.))
+im = ax.imshow(np.abs(corrcube[indmax1[0], indmax2[0], :, :]) * 180.0 / np.pi, origin='lower', cmap='spring', interpolation='None')
+ax.tick_params(axis='y', labelrotation=90)
+cbl = plt.colorbar(im, fraction=0.046, pad=0.04)
+cbl.ax.set_title(r'$|\\phi|$ [deg]')
+cbl.ax.tick_params(axis='y', labelrotation=90)
+ax.set_title('Relative orientation between gradient vectors')
+plt.show()
+
+# Esegui i test di Jackknife
+circstats01, corrcube01, scube1j01, scube2j01 = HOGcorr_ppvcubes(
+    cube1, cube2[:, :, ::-1], zmin1, zmax1, zmin2, zmax2, ksz=ksz, mask1=mask1, mask2=mask2, weights=weights
+)
+vplane01 = circstats01['V']
+
+circstats10, corrcube10, scube1j10, scube2j10 = HOGcorr_ppvcubes(
+    cube1, cube2[::-1, :, :], zmin1, zmax1, zmin2, zmax2, ksz=ksz, mask1=mask1, mask2=mask2, weights=weights
+)
+vplane10 = circstats10['V']
+
+circstats11, corrcube11, scube1j11, scube2j11 = HOGcorr_ppvcubes(
+    cube1, cube2[::-1, ::-1, :], zmin1, zmax1, zmin2, zmax2, ksz=ksz, mask1=mask1, mask2=mask2, weights=weights
+)
+vplane11 = circstats11['V']
+
+# Visualizza i risultati dei test di Jackknife
+maxV = np.nanmax([vplane, vplane01, vplane10, vplane11])
+vvec = np.sort(np.ravel(vplane))[::-1]
+indmax1, indmax2 = (vplane == vvec[0]).nonzero()
+
+fig = plt.figure(figsize=(10.0, 10.0))
+plt.rc('font', size=10)
+ax1 = plt.subplot(221)
+ax1.set_title('Original data')
+im = ax1.imshow(vplane, origin='lower', clim=[0., maxV], interpolation='None')
+ax1.scatter(indmax1, indmax2, marker='*', color='magenta')
+ax1.set_xlabel(' ')
+ax1.set_ylabel('Channel in cube 1')
+ax1.tick_params(axis='y', labelrotation=90)
+cbl = plt.colorbar(im, fraction=0.046, pad=0.04)
+cbl.ax.set_title(r'$V$')
+cbl.ax.tick_params(axis='y', labelrotation=90)
+
+ax2 = plt.subplot(222)
+ax2.set_title('Vertical flipping')
+im = ax2.imshow(vplane10, origin='lower', clim=[0., maxV], interpolation='None')
+ax2.scatter(indmax1, indmax2, marker='*', color='magenta')
+ax2.set_xlabel(' ')
+ax2.set_ylabel(' ')
+ax2.tick_params(axis='y', labelrotation=90)
+cbl = plt.colorbar(im, fraction=0.046, pad=0.04)
+cbl.ax.set_title(r'$V$')
+cbl.ax.tick_params(axis='y', labelrotation=90)
+
+ax3 = plt.subplot(223)
+ax3.set_title('Horizontal flipping')
+im = ax3.imshow(vplane01, origin='lower', clim=[0., maxV], interpolation='None')
+ax3.scatter(indmax1, indmax2, marker='*', color='magenta')
+ax3.set_xlabel(' ')
+ax3.set_ylabel('Channel in cube 1')
+ax3.tick_params(axis='y', labelrotation=90)
+cbl = plt.colorbar(im, fraction=0.046, pad=0.04)
+cbl.ax.set_title(r'$V$')
+cbl.ax.tick_params(axis='y', labelrotation=90)
+
+ax4 = plt.subplot(224)
+ax4.set_title('Both flips')
+im = ax4.imshow(vplane11, origin='lower', clim=[0., maxV], interpolation='None')
+ax4.scatter(indmax1, indmax2, marker='*', color='magenta')
+ax4.set_xlabel('Channel in cube 2')
+ax4.set_ylabel('Channel in cube 1')
+ax4.tick_params(axis='y', labelrotation=90)
+cbl = plt.colorbar(im, fraction=0.046, pad=0.04)
+cbl.ax.set_title(r'$V$')
+cbl.ax.tick_params(axis='y', labelrotation=90)
+plt.show()
