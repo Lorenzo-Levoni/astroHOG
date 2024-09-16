@@ -1,0 +1,98 @@
+#!/usr/bin/env python
+#
+# Allineamento Statistica Circolare
+#
+
+import numpy as np
+from scipy.stats import circmean, circstd
+
+#--------------------------------------------------------------------------------------------------------
+def Circular_Alignment(phi, weights=None, nruns=1):
+    # Calcola l'allineamento di un set di angoli basato su media circolare, raggio medio e varianza circolare.
+    #
+    # INPUTS
+    # phi      - angoli tra -pi e pi
+    # weights  - pesi statistici (opzionale)
+    # nruns    - numero di run per le simulazioni Monte Carlo
+    #
+    # OUTPUTS
+    # meanPhi  - media circolare degli angoli
+    # R        - raggio medio (resultant vector length)
+    # V        - varianza circolare
+    # s_meanPhi - deviazione standard della media circolare
+
+    if weights is None:
+        weights = np.ones_like(phi)
+
+    if nruns < 2:
+        output = Circular_Alignment_Lite(phi, weights=weights)
+        return {
+            'meanPhi': output['meanPhi'], 's_meanPhi': np.nan,
+            'R': output['R'], 'V': output['V'], 'ngood': output['ngood']
+        }
+
+    else:
+        arrmeanphi = np.zeros(nruns)
+        arrR = np.zeros(nruns)
+        arrV = np.zeros(nruns)
+        arrngood = np.zeros(nruns)
+
+        for i in range(nruns):
+            # Genera una distribuzione perturbata per le simulazioni Monte Carlo
+            inmaprand = np.random.vonmises(mu=np.mean(phi), kappa=1, size=len(phi))  # usiamo distribuzione di von Mises
+            output = Circular_Alignment_Lite(inmaprand, weights=weights)
+            arrmeanphi[i] = output['meanPhi']
+            arrR[i] = output['R']
+            arrV[i] = output['V']
+            arrngood[i] = output['ngood']
+
+        ngood = np.nanmean(arrngood)
+        meanphi = circmean(arrmeanphi, low=-np.pi, high=np.pi)
+        s_meanphi = circstd(arrmeanphi, low=-np.pi, high=np.pi)
+        R = np.nanmean(arrR)
+        V = np.nanmean(arrV)
+
+        return {
+            'meanPhi': meanphi, 's_meanPhi': s_meanphi, 'R': R, 'V': V, 'ngood': ngood
+        }
+
+#--------------------------------------------------------------------------------------------------------
+def Circular_Alignment_Lite(angles, weights=None):
+    # Calcola le metriche di allineamento circolare su una singola distribuzione di angoli.
+    #
+    # INPUTS
+    # angles   - angoli tra -pi e pi
+    # weights  - pesi statistici (opzionale)
+    #
+    # OUTPUTS
+    # meanPhi  - media circolare degli angoli
+    # R        - raggio medio (resultant vector length)
+    # V        - varianza circolare
+    # ngood    - numero di angoli validi
+
+    if weights is None:
+        weights = np.ones_like(angles)
+
+    # Calcolo delle componenti cartesiane
+    C = np.sum(weights * np.cos(angles)) / np.sum(weights)
+    S = np.sum(weights * np.sin(angles)) / np.sum(weights)
+
+    # Calcolo del raggio medio (resultant vector length)
+    R = np.sqrt(C**2 + S**2)
+
+    # Media circolare degli angoli
+    meanphi = np.arctan2(S, C)
+
+    # Varianza circolare
+    V = 1 - R
+
+    # Numero di angoli validi
+    ngood = float(np.size(angles))
+
+    return {'meanPhi': meanphi, 'R': R, 'V': V, 'ngood': ngood}
+
+
+print(f"Media circolare: {result['meanPhi']}")
+print(f"Raggio medio: {result['R']}")
+print(f"Varianza circolare: {result['V']}")
+print(f"Deviazione standard della media circolare: {result['s_meanPhi']}")
