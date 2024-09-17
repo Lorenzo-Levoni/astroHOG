@@ -1,0 +1,160 @@
+import sys
+sys.path.append('../')
+from astrohog2d import *
+from astrohog2d1v import *
+
+import matplotlib.pyplot as plt
+from astropy.io import fits
+
+from scipy import ndimage
+import numpy as np
+
+# Carica i cubi di dati
+def load_fits_data(filepath):
+    """Load FITS data from a given file path."""
+    try:
+        hdul = fits.open(filepath)
+        data = hdul[0].data
+        hdul.close()
+        return data
+    except Exception as e:
+        print(f"Error loading FITS file {filepath}: {e}")
+        return None
+
+cube1 = load_fits_data('../data/testcube1.fits')
+cube2 = load_fits_data('../data/testcube2.fits')
+
+# Visualizza i cubi di dati
+fig, ax = plt.subplots(1, 2, figsize=(16., 5.))
+plt.rc('font', size=12)
+ax[0].imshow(cube1.sum(axis=0), origin='lower', cmap='magma', interpolation='none')
+ax[0].set_title('Integrated cube 1')
+ax[0].tick_params(axis='y', labelrotation=90)
+ax[1].imshow(cube2.sum(axis=0), origin='lower', cmap='viridis', interpolation='none')
+ax[1].set_title('Integrated cube 2')
+ax[1].tick_params(axis='y', labelrotation=90)
+plt.show()
+
+# Definisci la dimensione del kernel e le maschere
+ksz = 10
+
+sz1 = np.shape(cube1)
+mask1 = 1. + 0. * cube1
+mask1[:, 0:ksz, :] = 0.
+mask1[:, sz1[1]-1-ksz:sz1[1]-1, :] = 0.
+mask1[:, :, 0:ksz] = 0.
+mask1[:, :, sz1[2]-1-ksz:sz1[2]-1] = 0.
+
+sz2 = np.shape(cube2)
+mask2 = 1. + 0. * cube2
+mask2[:, 0:ksz, :] = 0.
+mask2[:, sz2[1]-1-ksz:sz2[1]-1, :] = 0.
+mask2[:, :, 0:ksz] = 0.
+mask2[:, :, sz2[2]-1-ksz:sz2[2]-1] = 0.
+
+# Definisci i range dei canali e i pesi statistici
+zmin1 = 0
+zmax1 = sz1[0] - 1
+zmin2 = 0
+zmax2 = sz2[0] - 1
+weights = (1. / ksz)**2
+
+# Esegui la funzione HOGcorr_ppvcubes_circ per ottenere le statistiche HOG
+circstats, corrcube, scube1, scube2 = HOGcorr_ppvcubes_circ(
+    cube1, cube2, zmin1, zmax1, zmin2, zmax2, ksz=ksz, mask1=mask1, mask2=mask2, weights=weights
+)
+
+# Estrai e visualizza le statistiche HOG
+R_mean = circstats.get('R_mean', np.nan)
+R_vec = np.sort(np.ravel(R_mean))[::-1]
+indmax1, indmax2 = np.nonzero(R_mean == R_vec[0])
+
+fig, ax = plt.subplots(1, 1, figsize=(6., 6.))
+plt.rc('font', size=12)
+im = ax.imshow(R_mean, origin='lower', clim=[0., np.nanmax(R_mean)], interpolation='None')
+ax.scatter(indmax1, indmax2, marker='*', color='magenta')
+ax.set_xlabel('Channel in cube 2')
+ax.set_ylabel('Channel in cube 1')
+ax.tick_params(axis='y', labelrotation=90)
+cbl = plt.colorbar(im, fraction=0.046, pad=0.04)
+cbl.ax.set_title(r'$R_{mean}$')
+cbl.ax.tick_params(axis='y', labelrotation=90)
+plt.show()
+
+# Visualizza le immagini con la massima correlazione
+fig, ax = plt.subplots(1, 2, figsize=(16., 5.))
+ax[0].imshow(scube1[indmax1[0], :, :], origin='lower', cmap='magma', interpolation='none')
+ax[0].set_title('Image 1')
+ax[0].tick_params(axis='y', labelrotation=90)
+ax[1].imshow(scube2[indmax2[0], :, :], origin='lower', cmap='viridis', interpolation='none')
+ax[1].set_title('Image 2')
+ax[1].tick_params(axis='y', labelrotation=90)
+plt.show()
+
+# Visualizza l'angolo di orientamento relativo tra i gradienti
+fig, ax = plt.subplots(1, 1, figsize=(8., 5.))
+im = ax.imshow(np.abs(corrcube[indmax1[0], indmax2[0], :, :]) * 180.0 / np.pi, origin='lower', cmap='spring', interpolation='None')
+ax.tick_params(axis='y', labelrotation=90)
+cbl = plt.colorbar(im, fraction=0.046, pad=0.04)
+cbl.ax.set_title(r'$|\\phi|$ [deg]')
+cbl.ax.tick_params(axis='y', labelrotation=90)
+ax.set_title('Relative orientation between gradient vectors')
+plt.show()
+
+# Esegui i test di Jackknife
+def run_jackknife_tests(cube1, cube2, zmin1, zmax1, zmin2, zmax2, ksz, mask1, mask2, weights):
+    """Run Jackknife tests with different cube flips."""
+    results = {}
+    flips = [(None, None), (slice(None), slice(None, None, -1)), 
+             (slice(None, None, -1), slice(None)), 
+             (slice(None, None, -1), slice(None, None, -1))]
+    labels = ['Original', 'Vertical flip', 'Horizontal flip', 'Both flips']
+    
+    for (flip1, flip2), label in zip(flips, labels):
+        flipped_cube2 = cube2[flip2] if flip2 else cube2
+        flipped_cube1 = cube1[flip1] if flip1 else cube1
+        try:
+            circstats, corrcube, scube1, scube2 = HOGcorr_ppvcubes_circ(
+                flipped_cube1, flipped_cube2, zmin1, zmax1, zmin2, zmax2, ksz=ksz, mask1=mask1, mask2=mask2, weights=weights
+            )
+            results[label] = circstats.get('R_mean', np.nan)
+        except Exception as e:
+            print(f"Error running Jackknife test ({label}): {e}")
+            results[label] = np.nan
+    
+    return results
+
+# Esegui i test di Jackknife
+jackknife_results = run_jackknife_tests(cube1, cube2, zmin1, zmax1, zmin2, zmax2, ksz, mask1, mask2, weights)
+
+# Visualizza i risultati dei test di Jackknife
+maxR = np.nanmax([R_mean] + list(jackknife_results.values()))
+R_vec = np.sort(np.ravel(R_mean))[::-1]
+indmax1, indmax2 = np.nonzero(R_mean == R_vec[0])
+
+fig = plt.figure(figsize=(10.0, 10.0))
+plt.rc('font', size=10)
+ax1 = plt.subplot(221)
+ax1.set_title('Original data')
+im = ax1.imshow(R_mean, origin='lower', clim=[0., maxR], interpolation='None')
+ax1.scatter(indmax1, indmax2, marker='*', color='magenta')
+ax1.set_xlabel(' ')
+ax1.set_ylabel('Channel in cube 1')
+ax1.tick_params(axis='y', labelrotation=90)
+cbl = plt.colorbar(im, fraction=0.046, pad=0.04)
+cbl.ax.set_title(r'$R_{mean}$')
+cbl.ax.tick_params(axis='y', labelrotation=90)
+
+for i, (label, result) in enumerate(jackknife_results.items()):
+    ax = plt.subplot(222 + i)
+    ax.set_title(label)
+    im = ax.imshow(result, origin='lower', clim=[0., maxR], interpolation='None')
+    ax.scatter(indmax1, indmax2, marker='*', color='magenta')
+    ax.set_xlabel(' ')
+    ax.set_ylabel('Channel in cube 1')
+    ax.tick_params(axis='y', labelrotation=90)
+    cbl = plt.colorbar(im, fraction=0.046, pad=0.04)
+    cbl.ax.set_title(r'$R_{mean}$')
+    cbl.ax.tick_params(axis='y', labelrotation=90)
+
+plt.show()
