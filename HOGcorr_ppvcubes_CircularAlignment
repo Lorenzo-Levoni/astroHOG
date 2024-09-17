@@ -1,0 +1,59 @@
+import numpy as np
+from tqdm import tqdm
+
+def HOGcorr_ppvcubes_circ(cube1, cube2, z1min, z1max, z2min, z2max, pxsz=1., ksz=1., res=1., mask1=0, mask2=0, gradthres1=0., gradthres2=0., s_cube1=0., s_cube2=0., nruns=0, weights=None, verbose=True):
+    """Calcola la correlazione HOG tra cubi PPV utilizzando l'allineamento circolare."""
+    
+    print('Computing HOG correlation using circular alignment')
+    print(z1max - z1min + 1, z2max - z2min + 1)
+    
+    sz1 = np.shape(cube1)
+    sz2 = np.shape(cube2)
+
+    # Inizializzazione degli array di output
+    circstats_plane = np.zeros([z1max + 1 - z1min, z2max + 1 - z2min])
+    corrcube = np.zeros([z1max + 1 - z1min, z2max + 1 - z2min, sz1[1], sz1[2]])
+    scube1 = np.zeros(sz1)
+    scube2 = np.zeros(sz2)
+
+    pbar = tqdm(total=(z1max - z1min + 1) * (z2max - z2min + 1))
+
+    for i in range(z1min, z1max + 1):
+        for k in range(z2min, z2max + 1):
+            vprint(f'Processing slice {i - z1min}/{z1max - z1min} and {k - z2min}/{z2max - z2min}', verbose=verbose)
+            
+            frame1 = cube1[i, :, :]
+            frame2 = cube2[k, :, :]
+
+            mask1_slice = mask1[i, :, :] if np.array_equal(np.shape(cube1), np.shape(mask1)) else None
+            mask2_slice = mask2[k, :, :] if np.array_equal(np.shape(cube2), np.shape(mask2)) else None
+            
+            circstats, corrframe, sframe1, sframe2 = HOGcorr_ima_circ_align(
+                frame1, frame2, pxsz=pxsz, ksz=ksz, res=res, 
+                mask1=mask1_slice, mask2=mask2_slice, 
+                gradthres1=gradthres1, gradthres2=gradthres2, 
+                s_ima1=s_cube1, s_ima2=s_cube2, 
+                nruns=nruns, weights=weights, verbose=verbose
+            )
+            
+            circstats_plane[i - z1min, k - z2min] = circstats.get('R_mean', np.nan)
+            # Aggiungi altre statistiche se necessario
+
+            corrcube[i - z1min, k - z2min, :, :] = corrframe
+            scube2[k, :, :] = sframe2
+            scube1[i, :, :] = sframe1
+
+            pbar.update()
+
+    pbar.close()
+
+    outcircstats = {
+        'R_mean': circstats_plane,
+        # Aggiungi altre statistiche se necessario
+    }
+
+    return outcircstats, corrcube, scube1, scube2
+
+def vprint(obj, verbose=True):
+    if verbose:
+        print(obj)
