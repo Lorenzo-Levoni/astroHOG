@@ -1,0 +1,165 @@
+import sys
+sys.path.append('../')
+from astrohog2d import *
+from astrohog2d1v import *
+
+import matplotlib.pyplot as plt
+from astropy.io import fits
+
+import numpy as np
+from tqdm import tqdm
+
+# Funzione di stampa condizionale
+def vprint(message, verbose=True):
+    if verbose:
+        print(message)
+
+# Carica i cubi di dati
+hdul = fits.open('../data/testcube1.fits')
+cube1 = hdul[0].data
+hdul.close()
+hdul = fits.open('../data/testcube2.fits')
+cube2 = hdul[0].data
+hdul.close()
+
+# Visualizza i cubi di dati
+fig, ax = plt.subplots(1, 2, figsize=(16., 5.))
+plt.rc('font', size=12)
+ax[0].imshow(cube1.sum(axis=0), origin='lower', cmap='magma', interpolation='none')
+ax[0].set_title('Integrated cube 1')
+ax[0].tick_params(axis='y', labelrotation=90)
+ax[1].imshow(cube2.sum(axis=0), origin='lower', cmap='viridis', interpolation='none')
+ax[1].set_title('Integrated cube 2')
+ax[1].tick_params(axis='y', labelrotation=90)
+plt.show()
+
+# Definisci la dimensione del kernel e le maschere
+ksz = 10
+
+sz1 = np.shape(cube1)
+mask1 = 1. + 0. * cube1
+mask1[:, 0:ksz, :] = 0.
+mask1[:, sz1[1]-1-ksz:sz1[1]-1, :] = 0.
+mask1[:, :, 0:ksz] = 0.
+mask1[:, :, sz1[2]-1-ksz:sz1[2]-1] = 0.
+
+sz2 = np.shape(cube2)
+mask2 = 1. + 0. * cube2
+mask2[:, 0:ksz, :] = 0.
+mask2[:, sz2[1]-1-ksz:sz2[1]-1, :] = 0.
+mask2[:, :, 0:ksz] = 0.
+mask2[:, :, sz2[2]-1-ksz:sz2[2]-1] = 0.
+
+# Definisci i range dei canali e i pesi statistici
+zmin1 = 0
+zmax1 = sz1[0] - 1
+zmin2 = 0
+zmax2 = sz2[0] - 1
+
+weights = (1. / ksz)**2
+
+# Esegui la funzione HOGcorr_ppvcubes_watson per ottenere le statistiche Watson
+circstats, corrcube, scube1, scube2 = HOGcorr_ppvcubes_watson(
+    cube1, cube2, zmin1, zmax1, zmin2, zmax2, ksz=ksz, mask1=mask1, mask2=mask2, weights=weights
+)
+
+# Estrai e visualizza le statistiche Watson
+watsonplane = circstats['WatsonU2']
+s_watsonplane = circstats['s_WatsonU2']
+vvec = np.sort(np.ravel(watsonplane))[::-1]
+indmax1, indmax2 = (watsonplane == vvec[0]).nonzero()
+
+fig, ax = plt.subplots(1, 1, figsize=(6., 6.))
+plt.rc('font', size=12)
+im = ax.imshow(watsonplane, origin='lower', clim=[0., np.nanmax(watsonplane)], interpolation='None')
+ax.scatter(indmax1, indmax2, marker='*', color='magenta')
+ax.set_xlabel('Channel in cube 2')
+ax.set_ylabel('Channel in cube 1')
+ax.tick_params(axis='y', labelrotation=90)
+cbl = plt.colorbar(im, fraction=0.046, pad=0.04)
+cbl.ax.set_title(r'$WatsonU2$')
+plt.show()
+
+# Visualizza le immagini con la massima correlazione
+fig, ax = plt.subplots(1, 2, figsize=(16., 5.))
+ax[0].imshow(scube1[indmax1[0], :, :], origin='lower', cmap='magma', interpolation='none')
+ax[0].set_title('Image 1')
+ax[0].tick_params(axis='y', labelrotation=90)
+ax[1].imshow(scube2[indmax2[0], :, :], origin='lower', cmap='viridis', interpolation='none')
+ax[1].set_title('Image 2')
+ax[1].tick_params(axis='y', labelrotation=90)
+plt.show()
+
+# Visualizza l'angolo di orientamento relativo tra i gradienti
+fig, ax = plt.subplots(1, 1, figsize=(8., 5.))
+im = ax.imshow(np.abs(corrcube[indmax1[0], indmax2[0], :, :]) * 180.0 / np.pi, origin='lower', cmap='spring', interpolation='None')
+ax.tick_params(axis='y', labelrotation=90)
+cbl = plt.colorbar(im, fraction=0.046, pad=0.04)
+cbl.ax.set_title(r'$|\\phi|$ [deg]')
+cbl.ax.tick_params(axis='y', labelrotation=90)
+ax.set_title('Relative orientation between gradient vectors')
+plt.show()
+
+# Esegui i test di Jackknife con il metodo Watson U²
+circstats01, corrcube01, scube1j01, scube2j01 = HOGcorr_ppvcubes_watson(
+    cube1, cube2[:, :, ::-1], zmin1, zmax1, zmin2, zmax2, ksz=ksz, mask1=mask1, mask2=mask2, weights=weights
+)
+watsonplane01 = circstats01['WatsonU2']
+
+circstats10, corrcube10, scube1j10, scube2j10 = HOGcorr_ppvcubes_watson(
+    cube1, cube2[::-1, :, :], zmin1, zmax1, zmin2, zmax2, ksz=ksz, mask1=mask1, mask2=mask2, weights=weights
+)
+watsonplane10 = circstats10['WatsonU2']
+
+circstats11, corrcube11, scube1j11, scube2j11 = HOGcorr_ppvcubes_watson(
+    cube1, cube2[::-1, ::-1, :], zmin1, zmax1, zmin2, zmax2, ksz=ksz, mask1=mask1, mask2=mask2, weights=weights
+)
+watsonplane11 = circstats11['WatsonU2']
+
+# Visualizza i risultati dei test di Jackknife
+maxWatson = np.nanmax([watsonplane, watsonplane01, watsonplane10, watsonplane11])
+vvec = np.sort(np.ravel(watsonplane))[::-1]
+indmax1, indmax2 = (watsonplane == vvec[0]).nonzero()
+
+fig = plt.figure(figsize=(10.0, 10.0))
+plt.rc('font', size=10)
+ax1 = plt.subplot(221)
+ax1.set_title('Original data')
+im = ax1.imshow(watsonplane, origin='lower', clim=[0., maxWatson], interpolation='None')
+ax1.scatter(indmax1, indmax2, marker='*', color='magenta')
+ax1.set_xlabel(' ')
+ax1.set_ylabel('Channel in cube 1')
+ax1.tick_params(axis='y', labelrotation=90)
+cbl = plt.colorbar(im, fraction=0.046, pad=0.04)
+cbl.ax.set_title(r'$WatsonU2$')
+
+ax2 = plt.subplot(222)
+ax2.set_title('Vertical flipping')
+im = ax2.imshow(watsonplane10, origin='lower', clim=[0., maxWatson], interpolation='None')
+ax2.scatter(indmax1, indmax2, marker='*', color='magenta')
+ax2.set_xlabel(' ')
+ax2.set_ylabel(' ')
+ax2.tick_params(axis='y', labelrotation=90)
+cbl = plt.colorbar(im, fraction=0.046, pad=0.04)
+cbl.ax.set_title(r'$WatsonU2$')
+
+ax3 = plt.subplot(223)
+ax3.set_title('Horizontal flipping')
+im = ax3.imshow(watsonplane01, origin='lower', clim=[0., maxWatson], interpolation='None')
+ax3.scatter(indmax1, indmax2, marker='*', color='magenta')
+ax3.set_xlabel(' ')
+ax3.set_ylabel('Channel in cube 1')
+ax3.tick_params(axis='y', labelrotation=90)
+cbl = plt.colorbar(im, fraction=0.046, pad=0.04)
+cbl.ax.set_title(r'$WatsonU2$')
+
+ax4 = plt.subplot(224)
+ax4.set_title('Both flips')
+im = ax4.imshow(watsonplane11, origin='lower', clim=[0., maxWatson], interpolation='None')
+ax4.scatter(indmax1, indmax2, marker='*', color='magenta')
+ax4.set_xlabel('Channel in cube 2')
+ax4.set_ylabel('Channel in cube 1')
+ax4.tick_params(axis='y', labelrotation=90)
+cbl = plt.colorbar(im, fraction=0.046, pad=0.04)
+cbl.ax.set_title(r'$WatsonU2$')
+plt.show()
