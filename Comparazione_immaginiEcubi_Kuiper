@@ -1,0 +1,102 @@
+import sys
+sys.path.append('../')
+from astrohog2d import *
+from statests import *
+import matplotlib.image as mpimg
+import matplotlib.pyplot as plt
+from astropy.io import fits
+from scipy import ndimage
+import numpy as np
+
+# Caricamento delle immagini da confrontare
+hdul = fits.open('../data/testimage1.fits')
+image1 = hdul[0].data
+hdul.close()
+
+hdul = fits.open('../data/testimage2.fits')
+image2 = hdul[0].data
+hdul.close()
+
+# Visualizzazione delle immagini originali
+fig = plt.figure(figsize=(12.0, 6.0))
+plt.rc('font', size=10)
+ax1 = plt.subplot(121)
+ax1.imshow(image1, origin='lower', cmap='Greys_r', interpolation='none')
+ax1.set_title('Image 1')
+ax2 = plt.subplot(122)
+ax2.imshow(image2, origin='lower', cmap='Greys_r', interpolation='none')
+ax2.set_title('Image 2')
+plt.show()
+
+# Dimensione del kernel derivativo in pixel
+ksz = 9
+
+# Definizione delle maschere per le immagini
+sz1 = np.shape(image1)
+mask1 = np.ones_like(image1)
+mask1[0:ksz, :] = 0.
+mask1[sz1[0]-1-ksz:sz1[0]-1, :] = 0.
+mask1[:, 0:ksz] = 0.
+mask1[:, sz1[1]-1-ksz:sz1[1]-1] = 0.
+
+# Creazione di un cubo basato su image2 e creazione della maschera corrispondente
+cube2 = np.array([image2, image2, image2])
+sz2 = np.shape(cube2)
+mask2 = np.ones_like(cube2)
+mask2[:, 0:ksz, :] = 0.
+mask2[:, sz2[1]-1-ksz:sz2[1]-1, :] = 0.
+mask2[:, :, 0:ksz] = 0.
+mask2[:, :, sz2[2]-1-ksz:sz2[2]-1] = 0.
+
+# Calcolo delle statistiche di correlazione usando il test di Kuiper
+circstats, corrframe, smoothframe1, smoothframe2 = HOGcorr_imaANDcube_kuiper(image1, cube2, ksz=ksz, mask1=mask1, mask2=mask2)
+
+# Visualizzazione dei risultati delle statistiche di correlazione
+print('Statistica di Kuiper per le correlazioni ==================')
+print('Kuiper statistic (V)         ', circstats['Kuiper'])
+print('Standard deviation (s_V)     ', circstats['s_Kuiper'])
+print('Pearson correlation          ', circstats['pearsonr'])
+print('Cross-correlation            ', circstats['crosscor'])
+print('Number of gradient pairs     ', circstats['vecngood'])
+
+# Visualizzazione delle immagini smussate e dei gradienti
+dI1dx = ndimage.gaussian_filter(smoothframe1, [ksz, ksz], order=[0, 1], mode='nearest')
+dI1dy = ndimage.gaussian_filter(smoothframe1, [ksz, ksz], order=[1, 0], mode='nearest')
+normgrad1 = np.sqrt(dI1dx**2 + dI1dy**2)
+udI1dx = dI1dx / normgrad1
+udI1dy = dI1dy / normgrad1
+psi1 = np.arctan2(dI1dy, dI1dx)
+
+dI2dx = ndimage.gaussian_filter(smoothframe2, [ksz, ksz], order=[0, 1], mode='nearest')
+dI2dy = ndimage.gaussian_filter(smoothframe2, [ksz, ksz], order=[1, 0], mode='nearest')
+normgrad2 = np.sqrt(dI2dx**2 + dI2dy**2)
+udI2dx = dI2dx / normgrad2
+udI2dy = dI2dy / normgrad2
+psi2 = np.arctan2(dI2dy, dI2dx)
+
+# Visualizzazione della magnitudine e della direzione dei gradienti
+def plot_gradients(image, dIdx, dIdy, pitch=50, title='Gradient Magnitude and Direction', color='cyan'):
+    normgrad = np.sqrt(dIdx**2 + dIdy**2)
+    psi = np.arctan2(dIdy, dIdx)
+    sz = np.shape(image)
+    X, Y = np.meshgrid(np.arange(0, sz[1]-1, pitch), np.arange(0, sz[0]-1, pitch))
+    ux = np.cos(psi[Y, X])
+    uy = np.sin(psi[Y, X])
+
+    fig, ax = plt.subplots(figsize=(12.0, 6.0))
+    ax.imshow(normgrad, origin='lower', cmap='Greys_r', interpolation='none')
+    ax.quiver(X, Y, ux, uy, units='width', color=color, pivot='middle', width=0.005, headwidth=2, headlength=4)
+    ax.set_title(title)
+    plt.show()
+
+# Esempi di visualizzazione per le immagini 1 e 2
+plot_gradients(image1, dI1dx, dI1dy, color='cyan', title='Image 1 Gradient Magnitude and Direction')
+plot_gradients(image2, dI2dx, dI2dy, color='orange', title='Image 2 Gradient Magnitude and Direction')
+
+# Visualizzazione della correlazione delle orientazioni relative
+fig, ax = plt.subplots(1, 1, figsize=(9., 6.))
+im = plt.imshow(np.abs(corrframe)*180.0/np.pi, origin='lower', cmap='spring', interpolation='none')
+cb1 = plt.colorbar(im, fraction=0.046, pad=0.04)
+cb1.set_label(r'$|\phi|$ [deg]')
+ax.set_title('Relative orientation between gradients')
+plt.show()
