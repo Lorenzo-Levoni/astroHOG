@@ -57,7 +57,10 @@ def Circular_Alignment(phi, weights=None, nruns=1):
         }
 
 #--------------------------------------------------------------------------------------------------------
-def Circular_Alignment_Lite(angles, weights=None):
+import numpy as np
+from scipy.stats import circmean, circstd
+
+def Circular_Alignment_Lite(angles, weights):
     # Calcola le metriche di allineamento circolare su una singola distribuzione di angoli.
     #
     # INPUTS
@@ -83,16 +86,15 @@ def Circular_Alignment_Lite(angles, weights=None):
     # Media circolare degli angoli
     meanphi = np.arctan2(S, C)
 
-    # Varianza circolare
-    V = 1 - R
-
     # Numero di angoli validi
     ngood = float(np.size(angles))
+    
+    # Calcolo della misura di allineamento (AM)
+    cos_phi = np.cos(angles - meanphi)  # Coseno dell'angolo relativo
+    AM = np.mean(1**2 * cos_phi) - 1  # Misura di allineamento
+    V=AM
+    
+    # Numero di angoli validi
+    ngood = len(angles)
 
     return {'meanPhi': meanphi, 'R': R, 'V': V, 'ngood': ngood}
-
-
-print(f"Media circolare: {result['meanPhi']}")
-print(f"Raggio medio: {result['R']}")
-print(f"Varianza circolare: {result['V']}")
-print(f"Deviazione standard della media circolare: {result['s_meanPhi']}")
