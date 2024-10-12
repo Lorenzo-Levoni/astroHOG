@@ -1,111 +1,100 @@
-from scipy.ndimage import gaussian_filter
+import sys
+sys.path.append('../')
+from astrohog2d import *
+from statests import *
+import matplotlib.image as mpimg
+import matplotlib.pyplot as plt
+from astropy.io import fits
+from scipy import ndimage
 import numpy as np
 
-def HOGcorr_imaANDcube_kuiper(ima1, cube2, pxsz=1., ksz=1., res=1., mode='nearest', mask1=None, mask2=None, gradthres1=None, gradthres2=None, weights=None, computejk=False, verbose=True, s_ima1=None, nruns=0):
-    """
-    Calcola la correlazione spaziale tra ima1 e cube2 utilizzando il test di Kuiper.
+# Caricamento dell'immagine da confrontare (image1)
+hdul = fits.open('../data/testimage1.fits')
+image1 = hdul[0].data
+hdul.close()
 
-    Parameters
-    ----------
-    ima1 : array
-        Prima immagine da confrontare.
-    cube2 : array
-        Cubo di immagini (array 3D) da confrontare con ima1.
-    pxsz : float
-        Dimensione dei pixel.
-    ksz : float
-        Dimensione del kernel derivativo.
-    mode : str
-        Modalità di gestione dei bordi. Default è 'nearest'.
-    mask1, mask2 : array, opzionali
-        Maschere per ima1 e cube2. 
-    weights : array, opzionali
-        Pesi per il calcolo delle statistiche.
+# Cube2 è già fornito come cubo (3D), quindi lo carichiamo direttamente
+hdul = fits.open('../data/testimage2.fits')
+cube2 = hdul[0].data  # Assumiamo che cube2 sia già un cubo 3D
+hdul.close()
 
-    Returns
-    -------
-    circstats : dict
-        Statistiche che descrivono la correlazione.
-    corrframe : array
-        Angoli tra i gradienti delle immagini.
-    sima1, scube2 : arrays
-        Versioni smussate di ima1 e cube2.
-    """
+# Visualizzazione dell'immagine originale (image1)
+plt.figure(figsize=(6, 6))
+plt.imshow(image1, origin='lower', cmap='Greys_r', interpolation='none')
+plt.title('Image 1')
+plt.colorbar()
+plt.show()
 
-    # Verifica che ima2 (primo slice di cube2) abbia la stessa forma di ima1
-    assert cube2.shape[1:] == ima1.shape, "Le dimensioni delle slice di cube2 e di ima1 devono coincidere"
-    sz1 = ima1.shape
+# Dimensione del kernel derivativo in pixel
+ksz = 9
 
-    # Pesi ====================================================================
-    if weights is None:
-        weights = np.ones(sz1)
-    if np.size(weights) == 1:
-        weights = weights * np.ones(sz1)
-    assert weights.shape == ima1.shape, "Le dimensioni dei pesi e di ima1 devono coincidere"
+# Definizione delle maschere per l'immagine
+sz1 = np.shape(image1)
+mask1 = np.ones_like(image1)
+mask1[0:ksz, :] = 0.
+mask1[sz1[0]-1-ksz:sz1[0]-1, :] = 0.
+mask1[:, 0:ksz] = 0.
+mask1[:, sz1[1]-1-ksz:sz1[1]-1] = 0.
 
-    # Maschere ======================================================================
-    if mask1 is None:
-        mask1 = np.ones_like(ima1)
-    else:
-        assert mask1.shape == ima1.shape, "Le dimensioni di mask1 e di ima1 devono coincidere"
+# Creazione della maschera corrispondente per cube2
+sz2 = np.shape(cube2)
+mask2 = np.ones_like(cube2)
+mask2[:, 0:ksz, :] = 0.
+mask2[:, sz2[1]-1-ksz:sz2[1]-1, :] = 0.
+mask2[:, :, 0:ksz] = 0.
+mask2[:, :, sz2[2]-1-ksz:sz2[2]-1] = 0.
 
-    if mask2 is None:
-        mask2 = np.ones_like(cube2)
-    else:
-        assert mask2.shape == cube2.shape, "Le dimensioni di mask2 e di cube2 devono coincidere"
+# Calcolo delle statistiche di correlazione usando il test di Kuiper
+circstats, corrframe, smoothframe1, smoothframe2 = HOGcorr_imaANDcube_kuiper(image1, cube2, ksz=ksz, mask1=mask1, mask2=mask2)
 
-    imask2 = mask2[0, :, :]
+# Visualizzazione dei risultati delle statistiche di correlazione
+print('Statistica di Kuiper per le correlazioni ==================')
+print('Kuiper statistic (V)         ', circstats['Kuiper'])
+print('Standard deviation (s_V)     ', circstats['s_Kuiper'])
+print('Pearson correlation          ', circstats['pearsonr'])
+print('Cross-correlation            ', circstats['crosscor'])
+print('Number of gradient pairs     ', circstats['vecngood'])
 
-    # Impostare la dimensione del kernel per il filtro gaussiano
-    pxksz = ksz / pxsz
+# Visualizzazione delle immagini smussate e dei gradienti
+dI1dx = ndimage.gaussian_filter(smoothframe1, [ksz, ksz], order=[0, 1], mode='nearest')
+dI1dy = ndimage.gaussian_filter(smoothframe1, [ksz, ksz], order=[1, 0], mode='nearest')
+normgrad1 = np.sqrt(dI1dx**2 + dI1dy**2)
+udI1dx = dI1dx / normgrad1
+udI1dy = dI1dy / normgrad1
+psi1 = np.arctan2(dI1dy, dI1dx)
 
-    # Calcolare i gradienti dell'immagine 1
-    sima1 = gaussian_filter(ima1, pxksz, mode=mode)
-    dI1dx = gaussian_filter(ima1, pxksz, order=[0, 1], mode=mode)
-    dI1dy = gaussian_filter(ima1, pxksz, order=[1, 0], mode=mode)
+dI2dx = ndimage.gaussian_filter(smoothframe2, [ksz, ksz], order=[0, 1], mode='nearest')
+dI2dy = ndimage.gaussian_filter(smoothframe2, [ksz, ksz], order=[1, 0], mode='nearest')
+normgrad2 = np.sqrt(dI2dx**2 + dI2dy**2)
+udI2dx = dI2dx / normgrad2
+udI2dy = dI2dy / normgrad2
+psi2 = np.arctan2(dI2dy, dI2dx)
 
-    sz2 = cube2.shape
+# Visualizzazione della magnitudine e della direzione dei gradienti
+def plot_gradients(image, dIdx, dIdy, pitch=50, title='Gradient Magnitude and Direction', color='cyan'):
+    normgrad = np.sqrt(dIdx**2 + dIdy**2)
+    psi = np.arctan2(dIdy, dIdx)
+    sz = np.shape(image)
+    X, Y = np.meshgrid(np.arange(0, sz[1]-1, pitch), np.arange(0, sz[0]-1, pitch))
+    ux = np.cos(psi[Y, X])
+    uy = np.sin(psi[Y, X])
 
-    # Preparare gli array di output
-    vecKuiper = np.full(sz2[0], np.nan)
-    s_vecKuiper = np.full(sz2[0], np.nan)
-    vecpear = np.full(sz2[0], np.nan)
-    vecccor = np.full(sz2[0], np.nan)
-    vecngood = np.full(sz2[0], np.nan)
-    corrframe = np.full((sz2[0], sz1[0], sz1[1]), np.nan)
-    scube2 = np.full_like(cube2, np.nan)
+    fig, ax = plt.subplots(figsize=(6, 6))
+    ax.imshow(normgrad, origin='lower', cmap='Greys_r', interpolation='none')
+    ax.quiver(X, Y, ux, uy, units='width', color=color, pivot='middle', width=0.005, headwidth=2, headlength=4)
+    ax.set_title(title)
+    plt.show()
 
-    for i in range(sz2[0]):
-        ima2 = cube2[i, :, :]
-        imask2 = mask2[i, :, :]
-        
-        # Eseguire la correlazione (funzione d'esempio)
-        circstats12, corrframe12, _, sima2 = HOGcorr_ima(ima1, ima2, s_ima1=s_ima1, pxsz=pxsz, ksz=ksz, res=res, nruns=nruns, mask1=mask1, mask2=imask2, gradthres1=gradthres1, gradthres2=gradthres2, weights=weights, verbose=verbose)
-        
-        # Raccogliere le statistiche
-        corrframe[i, :, :] = corrframe12
-        scube2[i, :, :] = sima2
-        vecngood[i] = circstats12['ngood']
+# Esempi di visualizzazione per le immagini 1 e 2
+plot_gradients(image1, dI1dx, dI1dy, color='cyan', title='Image 1 Gradient Magnitude and Direction')
+plot_gradients(smoothframe2, dI2dx, dI2dy, color='orange', title='Image 2 Gradient Magnitude and Direction')
 
-        if vecngood[i] >= 2:
-            # Usa la funzione HOG_Kuiper fornita per calcolare la statistica di Kuiper
-            kuiper_stats = HOG_Kuiper(corrframe12.flatten(), weights=weights, s_phi=s_ima1, nruns=nruns)
-            vecKuiper[i] = kuiper_stats['V']
-            s_vecKuiper[i] = kuiper_stats['s_V']
-            vecpear[i] = circstats12['pearsonr']
-            vecccor[i] = circstats12['crosscor']
-        elif verbose:
-            print("WARNING: non abbastanza pixel per calcolare il test di Kuiper")
+# Visualizzazione della correlazione delle orientazioni relative
+fig, ax = plt.subplots(1, 1, figsize=(9., 6.))
+im = plt.imshow(np.abs(corrframe) * 180.0 / np.pi, origin='lower', cmap='spring', interpolation='none')
+cb1 = plt.colorbar(im, fraction=0.046, pad=0.04)
+cb1.set_label(r'$|\phi|$ [deg]')
+ax.set_title('Relative orientation between gradients')
+plt.show()
 
-    # Aggregare le statistiche finali
-    Kuiper = np.nanmean(vecKuiper)
-    s_Kuiper = np.nanstd(vecKuiper)
-    pearsonr = np.nanmean(vecpear)
-    crosscor = np.nanmean(vecccor)
-
-    circstats = {
-        'Kuiper': Kuiper, 's_Kuiper': s_Kuiper, 'pearsonr': pearsonr, 'crosscor': crosscor,
-        'vecKuiper': vecKuiper, 's_vecKuiper': s_vecKuiper, 'vecngood': vecngood
-    }
-
-    return circstats, corrframe, sima1, scube2
+         
