@@ -1,0 +1,111 @@
+from scipy.ndimage import gaussian_filter
+import numpy as np
+
+def HOGcorr_imaANDcube_kuiper(ima1, cube2, pxsz=1., ksz=1., res=1., mode='nearest', mask1=None, mask2=None, gradthres1=None, gradthres2=None, weights=None, computejk=False, verbose=True, s_ima1=None, nruns=0):
+    """
+    Calcola la correlazione spaziale tra ima1 e cube2 utilizzando il test di Kuiper.
+
+    Parameters
+    ----------
+    ima1 : array
+        Prima immagine da confrontare.
+    cube2 : array
+        Cubo di immagini (array 3D) da confrontare con ima1.
+    pxsz : float
+        Dimensione dei pixel.
+    ksz : float
+        Dimensione del kernel derivativo.
+    mode : str
+        Modalità di gestione dei bordi. Default è 'nearest'.
+    mask1, mask2 : array, opzionali
+        Maschere per ima1 e cube2. 
+    weights : array, opzionali
+        Pesi per il calcolo delle statistiche.
+
+    Returns
+    -------
+    circstats : dict
+        Statistiche che descrivono la correlazione.
+    corrframe : array
+        Angoli tra i gradienti delle immagini.
+    sima1, scube2 : arrays
+        Versioni smussate di ima1 e cube2.
+    """
+
+    # Verifica che ima2 (primo slice di cube2) abbia la stessa forma di ima1
+    assert cube2.shape[1:] == ima1.shape, "Le dimensioni delle slice di cube2 e di ima1 devono coincidere"
+    sz1 = ima1.shape
+
+    # Pesi ====================================================================
+    if weights is None:
+        weights = np.ones(sz1)
+    if np.size(weights) == 1:
+        weights = weights * np.ones(sz1)
+    assert weights.shape == ima1.shape, "Le dimensioni dei pesi e di ima1 devono coincidere"
+
+    # Maschere ======================================================================
+    if mask1 is None:
+        mask1 = np.ones_like(ima1)
+    else:
+        assert mask1.shape == ima1.shape, "Le dimensioni di mask1 e di ima1 devono coincidere"
+
+    if mask2 is None:
+        mask2 = np.ones_like(cube2)
+    else:
+        assert mask2.shape == cube2.shape, "Le dimensioni di mask2 e di cube2 devono coincidere"
+
+    imask2 = mask2[0, :, :]
+
+    # Impostare la dimensione del kernel per il filtro gaussiano
+    pxksz = ksz / pxsz
+
+    # Calcolare i gradienti dell'immagine 1
+    sima1 = gaussian_filter(ima1, pxksz, mode=mode)
+    dI1dx = gaussian_filter(ima1, pxksz, order=[0, 1], mode=mode)
+    dI1dy = gaussian_filter(ima1, pxksz, order=[1, 0], mode=mode)
+
+    sz2 = cube2.shape
+
+    # Preparare gli array di output
+    vecKuiper = np.full(sz2[0], np.nan)
+    s_vecKuiper = np.full(sz2[0], np.nan)
+    vecpear = np.full(sz2[0], np.nan)
+    vecccor = np.full(sz2[0], np.nan)
+    vecngood = np.full(sz2[0], np.nan)
+    corrframe = np.full((sz2[0], sz1[0], sz1[1]), np.nan)
+    scube2 = np.full_like(cube2, np.nan)
+
+    for i in range(sz2[0]):
+        ima2 = cube2[i, :, :]
+        imask2 = mask2[i, :, :]
+        
+        # Eseguire la correlazione (funzione d'esempio)
+        circstats12, corrframe12, _, sima2 = HOGcorr_ima(ima1, ima2, s_ima1=s_ima1, pxsz=pxsz, ksz=ksz, res=res, nruns=nruns, mask1=mask1, mask2=imask2, gradthres1=gradthres1, gradthres2=gradthres2, weights=weights, verbose=verbose)
+        
+        # Raccogliere le statistiche
+        corrframe[i, :, :] = corrframe12
+        scube2[i, :, :] = sima2
+        vecngood[i] = circstats12['ngood']
+
+        if vecngood[i] >= 2:
+            # Usa la funzione HOG_Kuiper fornita per calcolare la statistica di Kuiper
+            kuiper_stats = HOG_Kuiper(corrframe12.flatten(), weights=weights, s_phi=s_ima1, nruns=nruns)
+            vecKuiper[i] = kuiper_stats['V']
+            s_vecKuiper[i] = kuiper_stats['s_V']
+            vecpear[i] = circstats12['pearsonr']
+            vecccor[i] = circstats12['crosscor']
+        elif verbose:
+            print("WARNING: non abbastanza pixel per calcolare il test di Kuiper")
+
+    # Aggregare le statistiche finali
+    Kuiper = np.nanmean(vecKuiper)
+    s_Kuiper = np.nanstd(vecKuiper)
+    pearsonr = np.nanmean(vecpear)
+    crosscor = np.nanmean(vecccor)
+
+    circstats = {
+        'Kuiper': Kuiper, 's_Kuiper': s_Kuiper, 'pearsonr': pearsonr, 'crosscor': crosscor,
+        'vecKuiper': vecKuiper, 's_vecKuiper': s_vecKuiper, 'vecngood': vecngood
+    }
+
+    return circstats, corrframe, sima1, scube2
